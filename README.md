@@ -45,7 +45,7 @@ The short wall (with the roof gable and its round window) in stone and in wood:
 
 The corners between two side tabs are left blank: they are cut away and do not appear in the folded house. The dashed outline follows the resulting cross shape.
 
-With textures disabled (`TEXTURE_ATTIVE = False`) you get just the line templates:
+With textures disabled (`TEXTURES_ENABLED = False`) you get just the line templates:
 
 ![Plain line template](assets/blank_template.png)
 
@@ -54,7 +54,7 @@ With textures disabled (`TEXTURE_ATTIVE = False`) you get just the line template
 | Value | Meaning |
 | --- | --- |
 | 2.5 cm | one game square, 1.5 m in the fiction |
-| 5 cm wall height | 3 m, one storey |
+| 7.5 cm wall height (default) | 4.5 m, 3 squares |
 | 7.5 x 12.5 cm footprint (default) | 3 x 5 squares |
 
 ## Requirements
@@ -76,42 +76,42 @@ By default this writes four PDFs in the current folder:
 
 | File | Content |
 | --- | --- |
-| `casa_DnD_lato_corto.pdf` | Short wall with the roof gable, sized to the piece |
-| `casa_DnD_lato_lungo.pdf` | Long wall, sized to the piece |
-| `casa_DnD_tetto.pdf` | Roof sheet, two slopes folded along the ridge |
-| `casa_DnD_completo.pdf` | The three pieces on A4 pages, several copies per page |
+| `house_DnD_short_wall.pdf` | Short wall with the roof gable, sized to the piece |
+| `house_DnD_long_wall.pdf` | Long wall, sized to the piece |
+| `house_DnD_roof.pdf` | Roof sheet, two slopes folded along the ridge |
+| `house_DnD_complete.pdf` | The three pieces on A4 pages, as many copies per page as fit |
 
-A complete house needs **2 short walls, 2 long walls and 1 roof**. On the default A4 sheets this means one page of short walls (4 per page), one of long walls (2 per page, one with a door) and one of roofs (2 per page).
+A complete house needs **2 short walls, 2 long walls and 1 roof**. The console output tells you how many copies of each piece fit on its A4 page and, for the wall with the door, how many of them have the door.
 
 If a PDF cannot be written (`PermissionError` on Windows), the file is almost always still open in a PDF viewer. Close it and run the script again.
 
 ## Configuration
 
-All settings are constants at the top of `main.py`. The names are still Italian and will be renamed when the code is translated.
+All settings are constants at the top of `main.py`. The table lists the values currently set in the file.
 
-| Setting | Default | What it does |
+| Setting | Current value | What it does |
 | --- | --- | --- |
-| `GENERA_CASA_INTERA` | `True` | Whole house (4 PDFs) or a single wall PDF |
-| `LARGHEZZA_CM` | `7.5` | Short wall inner width (3 squares) |
-| `LUNGHEZZA_CM` | `12.5` | Long wall inner width (5 squares) |
-| `ALTEZZA_CM` | `5.0` | Wall inner height (2 squares) |
-| `BORDO_CM` | `1.0` | Tab width around the inner rectangle |
-| `ALTEZZA_TETTO_CM` | `2.5` | Height of the roof gable |
-| `ALETTA_CM` | `1.0` | Width of the roof flaps on the gable |
-| `SPORGENZA_TETTO_CM` | `0.5` | How far each roof slope overhangs the gable side |
-| `MARGINE_TETTO_CM` | `1.0` | Extra margin added on every side of the roof sheet |
-| `TEXTURE_ATTIVE` | `True` | Textures on or off |
-| `MATERIALE_PARETE` | `"mattoni"` | `"mattoni"` (brick), `"pietra"` (stone), `"legno"` (wood) |
-| `MATERIALE_TETTO` | `"tegole"` | `"tegole"` (tiles), `"legno"` (wood), `"paglia"` (thatch) |
-| `GENERA_TUTTE_LE_VARIANTI` | `False` | Generate all 9 material combinations |
+| `GENERATE_FULL_HOUSE` | `True` | Whole house (4 PDFs) or a single wall PDF |
+| `WIDTH_CM` | `7.5` | Short wall inner width (3 squares) |
+| `LENGTH_CM` | `12.5` | Long wall inner width (5 squares) |
+| `HEIGHT_CM` | `7.5` | Wall inner height (3 squares) |
+| `TAB_WIDTH_CM` | `1.0` | Tab width around the inner rectangle |
+| `ROOF_HEIGHT_CM` | `5` | Height of the roof gable |
+| `ROOF_FLAP_CM` | `1.0` | Width of the roof flaps on the gable |
+| `ROOF_OVERHANG_CM` | `0.5` | How far each roof slope overhangs the gable side |
+| `ROOF_MARGIN_CM` | `1.0` | Extra margin added on every side of the roof sheet |
+| `TEXTURES_ENABLED` | `False` | Textures on or off |
+| `WALL_MATERIAL` | `"wood"` | `"brick"`, `"stone"` or `"wood"` |
+| `ROOF_MATERIAL` | `"thatch"` | `"tiles"`, `"wood"` or `"thatch"` |
+| `GENERATE_ALL_VARIANTS` | `False` | Generate all 9 material combinations |
 | `SEED` | `7` | Different seed, different variation of the same textures |
-| `PORTA_E_FINESTRE` | `True` | Draw door and windows |
-| `PORTA_SU` | `"lungo"` | Door on the `"corto"` (short) or `"lungo"` (long) side |
-| `DIMEZZA_PORTE_COPIE` | `True` | Only half of the door-wall copies on a sheet get a door |
-| `COLORE_INDICATORE` | red | Colour of the half-height mark on the side tabs |
-| `MARGINE_A4_CM`, `SPAZIO_COPIE_CM` | `0.5` | Page margin and gap between copies on A4 |
+| `DOOR_AND_WINDOWS` | `True` | Draw door and windows |
+| `DOOR_ON` | `"short"` | Door on the `"short"` or the `"long"` side |
+| `HALVE_DOORS_ON_COPIES` | `True` | Only half of the door-wall copies on a sheet get a door |
+| `MARKER_COLOR` | red | Colour of the half-height mark on the side tabs |
+| `A4_MARGIN_CM`, `COPY_GAP_CM` | `0.5` | Page margin and gap between copies on A4 |
 
-Door and window sizes are set in metres of the fiction (`PORTA_L_MIN_M`, `PORTA_L_MAX_M`, `PORTA_A_M`, `FINESTRA_L_M`, `FINESTRA_A_M`, `FINESTRA_DAVANZALE_M`) and converted with `CELLA_CM` and `METRI_PER_CELLA`.
+Door and window sizes are set in metres of the fiction (`DOOR_WIDTH_MIN_M`, `DOOR_WIDTH_MAX_M`, `DOOR_HEIGHT_M`, `WINDOW_WIDTH_M`, `WINDOW_HEIGHT_M`, `WINDOW_SILL_M`) and converted with `CELL_CM` and `METERS_PER_CELL`.
 
 ## Printing and assembly
 
@@ -121,12 +121,11 @@ Door and window sizes are set in metres of the fiction (`PORTA_L_MIN_M`, `PORTA_
 
 ## Known limitations
 
-- The red half-height mark is hard to see on the red brick tabs. Change `COLORE_INDICATORE` if you use that material.
-- The combined A4 PDF only packs 1, 2 or 4 copies per page. Other layouts can be added to `DISPOSIZIONI`.
+- The red half-height mark is hard to see on the red brick tabs. Change `MARKER_COLOR` if you use that material.
+- The combined A4 PDF only packs 1, 2 or 4 copies per page. Other layouts can be added to `LAYOUTS`.
 - Textures are drawn procedurally and are not meant to look photographic.
 
 ## Roadmap
 
-- Translate the code (identifiers, comments, console output) to English
 - More materials and window styles
 - Optional second storey for larger walls
