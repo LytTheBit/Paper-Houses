@@ -92,10 +92,15 @@ class Config:
     door_width_max_m: float = _f(1.5, "door width on a 5-square wall or more")
     door_height_m: float = _f(2.0, "door height")
     door_arched: bool = _f(True, "door with a rounded top")
+    floor_height_cm: float = _f(
+        5.0, "one floor of windows for every this many cm of wall height")
+    window_spacing_cells: float = _f(
+        2.0, "target distance between windows, in game squares "
+             "(lower: more windows)")
     window_width_m: float = _f(0.8, "window width")
     window_height_m: float = _f(0.9, "window height")
     window_sill_m: float = _f(1.0, "height of the window sill above the ground")
-    round_window_radius_m: float = _f(0.25, "radius of the small window in the gable")
+    round_window_radius_m: float = _f(0.35, "radius of the small window in the gable")
 
     # --- Complete PDF ---
     paper: str = _f("A4", "paper size of the complete PDF",
@@ -229,7 +234,8 @@ def validate(cfg):
         errors.append(f"houses must be at least 1 (got {cfg.houses})")
 
     for name in ("width_cm", "length_cm", "height_cm", "tab_width_cm",
-                 "roof_height_cm", "cell_cm", "meters_per_cell"):
+                 "roof_height_cm", "cell_cm", "meters_per_cell", "floor_height_cm",
+                 "window_spacing_cells"):
         if getattr(cfg, name) <= 0:
             errors.append(f"{name} must be positive (got {getattr(cfg, name)})")
 
@@ -645,53 +651,81 @@ def opening_positions(cfg, width_cm, door_layout, door_present):
     """
     Returns [(type, offset from the centre in points)].
 
-    Door layout: the door in the centre (or a window if the door is
-    missing), windows one square from the centre, then three...
-    No-door layout: windows in the centre, two squares away, etc.
+    The openings are spread evenly: the wall is split into k equal bays
+    and every bay gets one opening. k is odd, so there is always an
+    opening in the centre: the door on the wall with the door (a window
+    if the door is missing), a window on the other walls. The windows
+    end up about `window_spacing_cells` squares apart; if they would not
+    fit, k shrinks. Both kinds of wall get the same number of openings.
     """
-    cell = cfg.cell_cm * cm
-    half = width_cm * cm / 2
-    ww = meters(cfg, cfg.window_width_m)
+    width = width_cm * cm
+    squares = width_cm / cfg.cell_cm
+    window_w = meters(cfg, cfg.window_width_m)
     margin = 0.3 * cm
 
+    centre_w = max(window_w, door_width(cfg, width_cm)) if door_layout \
+        else window_w
+    min_bay = max(centre_w / 2 + window_w / 2 + margin,   # next to the centre
+                  window_w + 2 * margin)                  # next to the edge
+
+    k = 1 + 2 * int(squares / (2 * cfg.window_spacing_cells) + 0.5)
+    while k > 1 and width / k < min_bay:
+        k -= 2
+
+    bay = width / k
+    centre = (k - 1) // 2
+
     out = []
-    k_max = int(half // cell) + 1
-
-    for k in range(-k_max, k_max + 1):
-        off = k * cell
-
-        if abs(off) + ww / 2 > half - margin and k != 0:
-            continue
-
-        if door_layout:
-            if k == 0:
-                out.append(("door" if door_present else "window", off))
-            elif abs(k) % 2 == 1:
-                out.append(("window", off))
+    for i in range(k):
+        off = (i - centre) * bay
+        if i == centre and door_layout and door_present:
+            out.append(("door", off))
         else:
-            if abs(k) % 2 == 0:
-                out.append(("window", off))
-
+            out.append(("window", off))
     return out
+
+
+def floors_for(cfg, height_cm):
+    """Number of floors of windows: one for every `floor_height_cm`
+    of wall height, and at least one."""
+    return max(1, int(height_cm / cfg.floor_height_cm + 1e-9))
+
+
+def openings_for(cfg, width_cm, height_cm, door_layout, door_present):
+    """
+    Returns [(type, offset from the centre in points, floor)].
+
+    The ground floor has the door (if any) and its windows. The upper
+    floors repeat the same columns, with a window where the door is.
+    """
+    ground = opening_positions(cfg, width_cm, door_layout, door_present)
+    upper = opening_positions(cfg, width_cm, door_layout, False)
+
+    result = [(kind, off, 0) for kind, off in ground]
+    for floor in range(1, floors_for(cfg, height_cm)):
+        result += [(kind, off, floor) for kind, off in upper]
+    return result
 
 
 def draw_openings(cfg, c, x1, y1, width_cm, height_cm,
                   door_layout, door_present):
     cx0 = x1 + width_cm * cm / 2
-    height = height_cm * cm
+    floor_height = height_cm * cm / floors_for(cfg, height_cm)
 
-    for kind, off in opening_positions(cfg, width_cm, door_layout,
-                                       door_present):
+    for kind, off, floor in openings_for(cfg, width_cm, height_cm,
+                                         door_layout, door_present):
         cx = cx0 + off
+        base = y1 + floor * floor_height
 
         if kind == "door":
-            h = min(meters(cfg, cfg.door_height_m), height - 0.4 * cm)
-            door(c, cx, y1, door_width(cfg, width_cm), h, cfg.door_arched)
+            h = min(meters(cfg, cfg.door_height_m), floor_height - 0.4 * cm)
+            door(c, cx, base, door_width(cfg, width_cm), h, cfg.door_arched)
         else:
-            wh = min(meters(cfg, cfg.window_height_m), height * 0.6)
+            wh = min(meters(cfg, cfg.window_height_m), floor_height * 0.6)
             sill = min(meters(cfg, cfg.window_sill_m),
-                       height - wh - 0.2 * cm)
-            window(c, cx, y1 + sill + wh / 2, meters(cfg, cfg.window_width_m), wh)
+                       floor_height - wh - 0.2 * cm)
+            window(c, cx, base + sill + wh / 2,
+                   meters(cfg, cfg.window_width_m), wh)
 
 
 # ============================================================
@@ -898,8 +932,9 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
                           has_door, door_present)
             if with_roof:
                 # Small round window in the gable
-                round_window(c, apex_x, base_y + 0.4 * ROOF_H,
-                             meters(cfg, cfg.round_window_radius_m))
+                radius = min(meters(cfg, cfg.round_window_radius_m),
+                             0.3 * ROOF_H)
+                round_window(c, apex_x, base_y + 0.4 * ROOF_H, radius)
 
         c.restoreState()
 

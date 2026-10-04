@@ -152,6 +152,130 @@ class PlanningTests(unittest.TestCase):
         self.assertEqual(len(self.all_items(pages)), 5)
 
 
+class WindowLayoutTests(unittest.TestCase):
+
+    WIDTHS = [2.5 * n for n in range(1, 13)]        # 1 to 12 squares
+
+    def extents(self, cfg, width_cm, door_layout, door_present=True):
+        """(kind, left edge, right edge) of every opening, in points."""
+        out = []
+        for kind, off in main.opening_positions(cfg, width_cm, door_layout,
+                                                door_present):
+            half = (main.door_width(cfg, width_cm) if kind == "door"
+                    else main.meters(cfg, cfg.window_width_m)) / 2
+            out.append((kind, off - half, off + half))
+        return sorted(out, key=lambda e: e[1])
+
+    def test_openings_never_overlap_and_stay_inside_the_wall(self):
+        cfg = Config()
+        for width in self.WIDTHS:
+            for door_layout in (True, False):
+                items = self.extents(cfg, width, door_layout)
+                wall = width * cm / 2
+                for kind, left, right in items:
+                    self.assertGreaterEqual(left, -wall - 1e-6, width)
+                    self.assertLessEqual(right, wall + 1e-6, width)
+                for a, b in zip(items, items[1:]):
+                    self.assertLess(a[2], b[1], (width, door_layout))
+
+    def test_layout_is_symmetric_with_an_opening_in_the_centre(self):
+        cfg = Config()
+        for width in self.WIDTHS:
+            for door_layout in (True, False):
+                offsets = [o for _, o in main.opening_positions(
+                    cfg, width, door_layout, True)]
+                self.assertIn(0.0, [round(o, 6) for o in offsets])
+                self.assertEqual(sorted(round(o, 6) for o in offsets),
+                                 sorted(round(-o, 6) for o in offsets))
+
+    def test_wall_with_and_without_door_have_the_same_number_of_openings(self):
+        cfg = Config()
+        for width in self.WIDTHS:
+            self.assertEqual(
+                len(main.opening_positions(cfg, width, True, True)),
+                len(main.opening_positions(cfg, width, False, True)), width)
+
+    def test_longer_walls_never_get_fewer_windows(self):
+        cfg = Config()
+        counts = [len(main.opening_positions(cfg, w, False, True))
+                  for w in self.WIDTHS]
+        self.assertEqual(counts, sorted(counts))
+        self.assertGreater(counts[-1], counts[0])
+
+    def test_default_house_sides_are_consistent(self):
+        cfg = Config()
+        for door_layout in (True, False):
+            short = len(main.opening_positions(cfg, cfg.width_cm, door_layout, True))
+            long_ = len(main.opening_positions(cfg, cfg.length_cm, door_layout, True))
+            self.assertGreaterEqual(long_, short)
+
+    def test_the_door_is_only_in_the_centre(self):
+        cfg = Config()
+        positions = main.opening_positions(cfg, 12.5, True, True)
+        doors = [(k, o) for k, o in positions if k == "door"]
+        self.assertEqual(len(doors), 1)
+        self.assertEqual(doors[0][1], 0.0)
+        self.assertEqual([k for k, _ in main.opening_positions(
+            cfg, 12.5, True, False)].count("door"), 0)
+
+    def test_spacing_option_changes_the_number_of_windows(self):
+        dense = len(main.opening_positions(
+            Config(window_spacing_cells=1.0), 15.0, False, True))
+        sparse = len(main.opening_positions(
+            Config(window_spacing_cells=3.0), 15.0, False, True))
+        self.assertGreater(dense, sparse)
+
+    def test_spacing_must_be_positive(self):
+        with self.assertRaises(ValueError):
+            main.validate(Config(window_spacing_cells=0))
+
+
+class FloorTests(unittest.TestCase):
+
+    def test_one_floor_every_five_cm(self):
+        cfg = Config()
+        expected = {2.5: 1, 5.0: 1, 7.5: 1, 10.0: 2, 12.5: 2, 15.0: 3}
+        for height, floors in expected.items():
+            self.assertEqual(main.floors_for(cfg, height), floors, height)
+
+    def test_floor_height_is_configurable(self):
+        self.assertEqual(main.floors_for(Config(floor_height_cm=2.5), 10), 4)
+
+    def test_upper_floor_has_a_window_where_the_door_is(self):
+        cfg = Config()
+        openings = main.openings_for(cfg, 12.5, 10.0, True, True)
+        ground = [(k, o) for k, o, f in openings if f == 0]
+        upper = [(k, o) for k, o, f in openings if f == 1]
+        self.assertIn(("door", 0), [(k, round(o)) for k, o in ground])
+        self.assertTrue(all(kind == "window" for kind, _ in upper))
+        # Same columns as the ground floor
+        self.assertEqual(sorted(round(o) for _, o in upper),
+                         sorted(round(o) for _, o in ground))
+
+    def test_single_floor_wall_is_unchanged(self):
+        cfg = Config()
+        openings = main.openings_for(cfg, 12.5, 7.5, True, True)
+        self.assertTrue(all(floor == 0 for _, _, floor in openings))
+
+    def test_wall_without_door_repeats_its_windows(self):
+        cfg = Config()
+        openings = main.openings_for(cfg, 12.5, 15.0, False, True)
+        for floor in (0, 1, 2):
+            self.assertEqual(
+                sum(1 for _, _, f in openings if f == floor), 3)
+
+    def test_floor_height_must_be_positive(self):
+        with self.assertRaises(ValueError):
+            main.validate(Config(floor_height_cm=0))
+
+    def test_tall_house_builds(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch("builtins.print"):
+            files = main.run(make_cfg(tmp, height_cm=10.0,
+                                      textures_enabled=True))
+            self.assertEqual(len(files), 4)
+
+
 class ColourTests(unittest.TestCase):
 
     def test_marker_stays_red_on_white(self):

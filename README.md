@@ -14,7 +14,7 @@ A single Python script draws the cutting and folding templates for a small house
   - Roofs: wood shingles, clay tiles, thatch
   - Textures only cover the area inside the solid lines. Tabs get the flat base colour only, which makes cutting and gluing easier.
 - **Nothing to install**: run it from the Actions tab of the GitHub repository, fill a form and download the PDFs (see below).
-- **Door and windows scaled to the story world**: 2.5 cm = 1.5 m. Doors are 1 m to 1.5 m wide depending on the wall length, windows are 0.8 x 0.9 m. Arched plank door with frame, hinges and handle, framed windows with sills, round window in the gable.
+- **Door and windows scaled to the story world**: 2.5 cm = 1.5 m. Doors are 1 m to 1.5 m wide depending on the wall length, windows are 0.8 x 0.9 m. Arched plank door with frame, hinges and handle, framed windows with sills, round window in the gable. Windows are spread evenly along each wall, with one floor of windows for every 5 cm of wall height.
 - **Door on the short or the long side**, your choice.
 - **Whole-house mode**: short wall (with the roof gable), long wall and roof sheet, as three separate PDFs plus one combined PDF.
 - **Flexible page packing** for the combined PDF, on A4 or US Letter:
@@ -157,6 +157,8 @@ The table lists the defaults currently set in `Config`. Each setting has a match
 | `reuse_textures` | `True` | Draw each texture once per PDF and reuse it |
 | `door_and_windows` | `True` | Draw door and windows |
 | `door_on` | `"short"` | Door on the `"short"` or the `"long"` side |
+| `floor_height_cm` | `5.0` | One floor of windows for every this many cm of wall height |
+| `window_spacing_cells` | `2.0` | Target distance between windows, in game squares (lower: more windows) |
 | `one_door_per_house` | `True` | Only one wall per house gets the door |
 | `paper` | `"A4"` | `"A4"` or `"Letter"` |
 | `houses` | none | Print exactly the pieces for this many houses |
@@ -168,7 +170,7 @@ The table lists the defaults currently set in `Config`. Each setting has a match
 | `output_dir` | `"output"` | Output folder, relative to the script |
 | `base_name` | `"house_DnD"` | Base name of the PDFs |
 
-Colours and dash pattern (`marker_color`, `line_color`, `dash`) can only be changed in the file. Door and window sizes are set in metres of the fiction (`door_width_min_m`, `door_width_max_m`, `door_height_m`, `window_width_m`, `window_height_m`, `window_sill_m`) and converted with `cell_cm` and `meters_per_cell`.
+Colours and dash pattern (`marker_color`, `line_color`, `dash`) can only be changed in the file. Door and window sizes are set in metres of the fiction (`door_width_min_m`, `door_width_max_m`, `door_height_m`, `window_width_m`, `window_height_m`, `window_sill_m`, `round_window_radius_m`) and converted with `cell_cm` and `meters_per_cell`.
 
 To add a material, write a texture function and register it with the `@wall_texture("name", base=(r, g, b))` or `@roof_texture(...)` decorator. It then shows up in the options automatically.
 
