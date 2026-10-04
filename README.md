@@ -9,16 +9,23 @@ A single Python script draws the cutting and folding templates for a small house
 ## Features
 
 - **Grid-accurate**: wall sizes are the *inner* rectangle, measured in 2.5 cm game squares. The 1 cm tabs are added outside and never count towards the house size.
-- **Procedural textures**, deterministic for a given `SEED`:
+- **Procedural textures**, deterministic for a given `seed`:
   - Walls: brick, stone, wood (horizontal planks)
   - Roofs: wood shingles, clay tiles, thatch
   - Textures only cover the area inside the solid lines. Tabs get the flat base colour only, which makes cutting and gluing easier.
-- **Door and windows scaled to the story world**: 2.5 cm = 1.5 m, so a 5 cm wall is a 3 m, single-storey wall. Doors are 1 m to 1.5 m wide depending on the wall length, windows are 0.8 x 0.9 m.
+- **Nothing to install**: run it from the Actions tab of the GitHub repository, fill a form and download the PDFs (see below).
+- **Door and windows scaled to the story world**: 2.5 cm = 1.5 m. Doors are 1 m to 1.5 m wide depending on the wall length, windows are 0.8 x 0.9 m. Arched plank door with frame, hinges and handle, framed windows with sills, round window in the gable.
 - **Door on the short or the long side**, your choice.
-- **Whole-house mode**: generates the short wall (with the roof gable), the long wall and the roof sheet, as three separate PDFs plus one combined A4 PDF.
-- **Smart A4 packing**: each sheet of the combined PDF is an A4 page with as many copies of the same piece as fit (1, 2 or 4), in the best orientation.
-- **One door per house**: when several copies of the door wall share a sheet, only half of them get a door (the others get a window in its place). Can be disabled.
-- **Warnings** at runtime if a wall size is not a multiple of 2.5 cm.
+- **Whole-house mode**: short wall (with the roof gable), long wall and roof sheet, as three separate PDFs plus one combined PDF.
+- **Flexible page packing** for the combined PDF, on A4 or US Letter:
+  - By default every page is filled with as many copies of one piece as fit, rotating pieces by 90 degrees when it helps.
+  - With `--houses N` you get exactly the pieces for N houses, and with `--mix-pieces` different pieces share the same pages to save paper.
+- **One door per house**: the door is assigned house by house, so N houses get N doors. The other wall of the pair gets a window in its place.
+- **Corner letters** on the side tabs: the two tabs with the same letter (A to D, prefixed by the house number when you print several houses) are glued together.
+- **Calibration ruler**: a 5 cm line on every page of the combined PDF, to check that the print is at the right scale.
+- **Readable marks**: the half-height mark and the letters change to black or white when they would be hard to see on the wall colour.
+- **Textures are drawn once per PDF** and reused for every copy, which roughly halves the size of a textured file with two houses.
+- **Checks**: warnings for sizes that are not multiples of 2.5 cm, clear messages for wrong settings, and a hint when a PDF is locked by a viewer.
 - Optional: generate all 9 wall/roof material combinations in one run.
 
 ## Gallery
@@ -41,7 +48,8 @@ The short wall (with the roof gable and its round window) in stone and in wood:
 | --- | --- |
 | Solid black | **Fold** |
 | Dashed black | **Cut** |
-| Dashed red, half-way up each side tab | Marks where to cut for the interlocking joint |
+| Dashed mark half-way up each side tab (red, or white/black on dark or red walls) | Marks where to cut for the interlocking joint |
+| Letter on a side tab (`A` to `D`, e.g. `2B` with several houses) | The two tabs with the same letter go together |
 
 The corners between two side tabs are left blank: they are cut away and do not appear in the folded house. The dashed outline follows the resulting cross shape.
 
@@ -54,8 +62,35 @@ With textures disabled (`TEXTURES_ENABLED = False`) you get just the line templa
 | Value | Meaning |
 | --- | --- |
 | 2.5 cm | one game square, 1.5 m in the fiction |
-| 7.5 cm wall height (default) | 4.5 m, 3 squares |
+| 5 cm wall height (default) | 3 m, one storey |
 | 7.5 x 12.5 cm footprint (default) | 3 x 5 squares |
+
+## Run it on GitHub (nothing to install)
+
+You can generate the PDFs without downloading anything, from the repository page:
+
+1. Open the **Actions** tab.
+2. Pick **Generate paper houses** in the left sidebar.
+3. Press **Run workflow**, fill the form and confirm.
+4. After about a minute the run turns green. Open it and download the `paper-houses-N` file at the bottom of the page: a zip with the PDFs. The run page also lists what is on every page and how many walls have the door.
+
+| Field | What it does |
+| --- | --- |
+| Number of houses | Exactly the pieces for that many houses. Leave it empty to fill every page with copies of one piece |
+| Paint textures, wall material, roof material | Look of the house. "Every wall/roof combination" makes all 9 versions (needs textures) |
+| Side of the house with the door | Short or long side |
+| Paper size | A4 or US Letter |
+| Different pieces share the same pages | Saves paper (needs a number of houses) |
+| One door per house, corner letters, 5 cm ruler | The matching `Config` options |
+| Short side, long side, wall height, roof height | Sizes in cm. Wall sizes should be multiples of 2.5 |
+| Texture seed | Another number, another variation of the textures |
+| Any other option | Any command-line option of `main.py`, for example `--no-door-and-windows --copy-gap-cm 0.3`. Run `python main.py --help` to see them all |
+
+Notes:
+
+- You need a GitHub account. On the original repository only people with write access can run workflows. Everybody else can **fork** the repository (one click, no download), enable Actions in the fork and run it there.
+- The PDFs stay attached to the run for 30 days.
+- The workflow is the file `.github/workflows/generate.yml`.
 
 ## Requirements
 
@@ -63,7 +98,7 @@ With textures disabled (`TEXTURES_ENABLED = False`) you get just the line templa
 - [ReportLab](https://pypi.org/project/reportlab/)
 
 ```bash
-pip install reportlab
+pip install -r requirements.txt
 ```
 
 ## Usage
@@ -72,60 +107,94 @@ pip install reportlab
 python main.py
 ```
 
-By default this writes four PDFs in the current folder:
+Every setting can be changed in the `Config` class at the top of `main.py`, or overridden from the command line:
+
+```bash
+# Two textured brick houses with tiled roofs, pieces mixed on US Letter pages
+python main.py --textures-enabled --wall-material brick --roof-material tiles \
+               --houses 2 --mix-pieces --paper Letter
+
+# Door on the long side, no calibration ruler
+python main.py --door-on long --no-calibration-ruler
+
+# All the options
+python main.py --help
+```
+
+By default the PDFs are written in an `output/` folder next to the script:
 
 | File | Content |
 | --- | --- |
 | `house_DnD_short_wall.pdf` | Short wall with the roof gable, sized to the piece |
 | `house_DnD_long_wall.pdf` | Long wall, sized to the piece |
 | `house_DnD_roof.pdf` | Roof sheet, two slopes folded along the ridge |
-| `house_DnD_complete.pdf` | The three pieces on A4 pages, as many copies per page as fit |
+| `house_DnD_complete.pdf` | The pieces on A4 or Letter pages |
 
-A complete house needs **2 short walls, 2 long walls and 1 roof**. The console output tells you how many copies of each piece fit on its A4 page and, for the wall with the door, how many of them have the door.
+A complete house needs **2 short walls, 2 long walls and 1 roof**. Without `--houses` the combined PDF fills each page with copies of one piece, so you may print more than you need. With `--houses N` it prints exactly what N houses require. The console output lists what is on each page and how many walls have the door.
 
-If a PDF cannot be written (`PermissionError` on Windows), the file is almost always still open in a PDF viewer. Close it and run the script again.
+If a PDF cannot be written (`PermissionError` on Windows), the file is almost always still open in a PDF viewer. The script tells you to close it and run again.
 
 ## Configuration
 
-All settings are constants at the top of `main.py`. The table lists the values currently set in the file.
+The table lists the defaults currently set in `Config`. Each setting has a matching command-line option: the name with dashes, for example `wall_material` becomes `--wall-material`, and on/off settings accept `--name` and `--no-name`.
 
-| Setting | Current value | What it does |
+| Setting | Default | What it does |
 | --- | --- | --- |
-| `GENERATE_FULL_HOUSE` | `True` | Whole house (4 PDFs) or a single wall PDF |
-| `WIDTH_CM` | `7.5` | Short wall inner width (3 squares) |
-| `LENGTH_CM` | `12.5` | Long wall inner width (5 squares) |
-| `HEIGHT_CM` | `7.5` | Wall inner height (3 squares) |
-| `TAB_WIDTH_CM` | `1.0` | Tab width around the inner rectangle |
-| `ROOF_HEIGHT_CM` | `5` | Height of the roof gable |
-| `ROOF_FLAP_CM` | `1.0` | Width of the roof flaps on the gable |
-| `ROOF_OVERHANG_CM` | `0.5` | How far each roof slope overhangs the gable side |
-| `ROOF_MARGIN_CM` | `1.0` | Extra margin added on every side of the roof sheet |
-| `TEXTURES_ENABLED` | `False` | Textures on or off |
-| `WALL_MATERIAL` | `"wood"` | `"brick"`, `"stone"` or `"wood"` |
-| `ROOF_MATERIAL` | `"thatch"` | `"tiles"`, `"wood"` or `"thatch"` |
-| `GENERATE_ALL_VARIANTS` | `False` | Generate all 9 material combinations |
-| `SEED` | `7` | Different seed, different variation of the same textures |
-| `DOOR_AND_WINDOWS` | `True` | Draw door and windows |
-| `DOOR_ON` | `"short"` | Door on the `"short"` or the `"long"` side |
-| `HALVE_DOORS_ON_COPIES` | `True` | Only half of the door-wall copies on a sheet get a door |
-| `MARKER_COLOR` | red | Colour of the half-height mark on the side tabs |
-| `A4_MARGIN_CM`, `COPY_GAP_CM` | `0.5` | Page margin and gap between copies on A4 |
+| `generate_full_house` | `True` | Whole house (4 PDFs) or a single wall PDF |
+| `width_cm` | `7.5` | Short wall inner width (3 squares) |
+| `length_cm` | `12.5` | Long wall inner width (5 squares) |
+| `height_cm` | `7.5` | Wall inner height (3 squares) |
+| `tab_width_cm` | `1.0` | Tab width around the inner rectangle |
+| `roof_height_cm` | `5.0` | Height of the roof gable |
+| `roof_flap_cm` | `1.0` | Width of the roof flaps on the gable |
+| `roof_overhang_cm` | `0.5` | How far each roof slope overhangs the gable side |
+| `roof_margin_cm` | `1.0` | Extra margin added on every side of the roof sheet |
+| `textures_enabled` | `False` | Textures on or off |
+| `wall_material` | `"wood"` | `"brick"`, `"stone"` or `"wood"` |
+| `roof_material` | `"thatch"` | `"tiles"`, `"wood"` or `"thatch"` |
+| `generate_all_variants` | `False` | Generate all 9 material combinations |
+| `seed` | `7` | Different seed, different variation of the same textures |
+| `reuse_textures` | `True` | Draw each texture once per PDF and reuse it |
+| `door_and_windows` | `True` | Draw door and windows |
+| `door_on` | `"short"` | Door on the `"short"` or the `"long"` side |
+| `one_door_per_house` | `True` | Only one wall per house gets the door |
+| `paper` | `"A4"` | `"A4"` or `"Letter"` |
+| `houses` | none | Print exactly the pieces for this many houses |
+| `mix_pieces` | `False` | With `houses`: different pieces share the same pages |
+| `allow_rotation` | `True` | Allow rotating pieces by 90 degrees |
+| `joint_labels` | `True` | Corner letters on the side tabs |
+| `calibration_ruler` | `True` | 5 cm ruler on every page of the combined PDF |
+| `page_margin_cm`, `copy_gap_cm` | `0.5` | Page margin and gap between pieces |
+| `output_dir` | `"output"` | Output folder, relative to the script |
+| `base_name` | `"house_DnD"` | Base name of the PDFs |
 
-Door and window sizes are set in metres of the fiction (`DOOR_WIDTH_MIN_M`, `DOOR_WIDTH_MAX_M`, `DOOR_HEIGHT_M`, `WINDOW_WIDTH_M`, `WINDOW_HEIGHT_M`, `WINDOW_SILL_M`) and converted with `CELL_CM` and `METERS_PER_CELL`.
+Colours and dash pattern (`marker_color`, `line_color`, `dash`) can only be changed in the file. Door and window sizes are set in metres of the fiction (`door_width_min_m`, `door_width_max_m`, `door_height_m`, `window_width_m`, `window_height_m`, `window_sill_m`) and converted with `cell_cm` and `meters_per_cell`.
+
+To add a material, write a texture function and register it with the `@wall_texture("name", base=(r, g, b))` or `@roof_texture(...)` decorator. It then shows up in the options automatically.
 
 ## Printing and assembly
 
-- Print at **100% / "actual size"**, never "fit to page". Otherwise the pieces will not match the 2.5 cm grid. A quick check: the inner rectangle of the short wall should measure exactly 7.5 cm.
+- Print at **100% / "actual size"**, never "fit to page". Otherwise the pieces will not match the 2.5 cm grid. The ruler at the bottom of every page of the combined PDF should measure exactly 5 cm.
 - Cut along the dashed lines and fold along the solid ones.
 - Thick paper or light card works best.
 
+## Tests
+
+```bash
+python -m unittest -v
+```
+
+The tests cover geometry, packing (no overlaps, pieces inside the page, rotation), one door per house, corner letters, colour contrast, validation, the command line, and that the same settings always produce identical PDFs.
+
 ## Known limitations
 
-- The red half-height mark is hard to see on the red brick tabs. Change `MARKER_COLOR` if you use that material.
-- The combined A4 PDF only packs 1, 2 or 4 copies per page. Other layouts can be added to `LAYOUTS`.
+- The corner letters tell you which tabs go together. They do not say which tab is slit from the top and which from the bottom for the interlocking joint.
+- The packer is a fast heuristic: it is not guaranteed to find the layout with the fewest pages.
 - Textures are drawn procedurally and are not meant to look photographic.
+- The gallery pictures above were made with an earlier version, which had simpler doors and windows.
 
 ## Roadmap
 
 - More materials and window styles
 - Optional second storey for larger walls
+- Split `main.py` into modules (geometry, textures, openings, layout, command line)

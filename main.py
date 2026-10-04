@@ -1,177 +1,162 @@
-from reportlab.pdfgen import canvas
-from reportlab.lib.units import cm
-from reportlab.lib.pagesizes import A4, landscape
+"""Paper Houses: procedural, printable paper houses for tabletop RPGs.
+
+Draws the cutting/folding templates of a small house, sized on the
+2.5 cm battle-map grid, with optional procedural textures, door and
+windows. Everything is vector graphics written straight into PDFs.
+
+Edit the defaults of `Config` below, or override them from the command
+line (run `python main.py --help`).
+"""
+
+from __future__ import annotations
+
+import argparse
 import math
 import random
+import sys
+from dataclasses import dataclass, field, fields
+from pathlib import Path
+from typing import Callable, Optional
+
+from reportlab.lib.pagesizes import A4, letter, landscape
+from reportlab.lib.units import cm
+from reportlab.pdfgen import canvas
 
 
 # ============================================================
 # SETTINGS
 # ============================================================
 
-# WIDTH, LENGTH and HEIGHT are the measurements of the INNER
-# rectangle (the D&D squares, multiples of 2.5 cm).
-# The tabs (TAB_WIDTH_CM) are added on the outside.
-
-# If True, generates 4 PDFs: short wall with roof gable, long wall,
-# roof, and a fourth PDF (A4) with all the pieces, several copies each.
-# If False, generates a single PDF (short wall, with or without roof).
-GENERATE_FULL_HOUSE = True
-
-# Short side of the house (the one with the gable): 3 squares
-WIDTH_CM = 7.5
-
-# Long side of the house: 5 squares
-# (only used if GENERATE_FULL_HOUSE = True)
-LENGTH_CM = 12.5
-
-# Wall height (same for both sides): 3 squares
-HEIGHT_CM = 7.5
-
-# Width of the tabs around the inner rectangle
-TAB_WIDTH_CM = 1.0
-
-# Height of the roof gable (triangle)
-ROOF_HEIGHT_CM = 2.5
-
-# Width of the flaps on the roof gable
-ROOF_FLAP_CM = 1.0
-
-# How far the roof slope extends beyond the gable side
-ROOF_OVERHANG_CM = 0.5
-
-# How much the roof sheet is enlarged, on EVERY side, compared
-# to its base size (computed from the walls)
-ROOF_MARGIN_CM = 1.0
-
-# Single-PDF mode only: set to False to remove the roof
-USE_ROOF = True
-
-# If True, also draws the base of the triangle (fold line)
-DRAW_ROOF_BASE = False
-
-# Line width
-LINE_WIDTH = 0.5
-
-# Colour of the fold/cut lines (R, G, B between 0 and 1)
-LINE_COLOR = (0, 0, 0)
-
-# Dash pattern (dash length, gap length) in points
-DASH = (3, 3)
-
-# Mark at half height of the side tabs
-# (where to cut for the interlocking joint)
-MARKER_COLOR = (0.85, 0.10, 0.10)
+def _f(default, help="", choices=None, cli=True, type=None):
+    """Declares a setting: default value, help text, and how the
+    command line should treat it."""
+    return field(default=default, metadata={
+        "help": help, "choices": choices, "cli": cli, "type": type})
 
 
-# --- TEXTURES ---
+@dataclass
+class Config:
+    # WIDTH, LENGTH and HEIGHT are the measurements of the INNER
+    # rectangle (the D&D squares, multiples of 2.5 cm).
+    # The tabs (tab_width_cm) are added on the outside.
 
-# If False: no colours, only the lines
-TEXTURES_ENABLED = True
+    # --- What to generate ---
+    generate_full_house: bool = _f(
+        True, "generate the whole house (4 PDFs) instead of a single wall")
+    width_cm: float = _f(7.5, "short side of the house (the one with the gable)")
+    length_cm: float = _f(12.5, "long side of the house")
+    height_cm: float = _f(7.5, "wall height (same for both sides)")
+    tab_width_cm: float = _f(1.0, "width of the tabs around the inner rectangle")
+    roof_height_cm: float = _f(5.0, "height of the roof gable (triangle)")
+    roof_flap_cm: float = _f(1.0, "width of the flaps on the roof gable")
+    roof_overhang_cm: float = _f(
+        0.5, "how far the roof slope extends beyond the gable side")
+    roof_margin_cm: float = _f(
+        1.0, "extra margin added on every side of the roof sheet")
+    use_roof: bool = _f(True, "single-wall mode only: draw the roof gable")
+    draw_roof_base: bool = _f(
+        False, "also draw the base of the gable triangle (fold line)")
 
-# Wall material: "brick" | "stone" | "wood"
-WALL_MATERIAL = "stone"
+    # --- Lines ---
+    line_width: float = _f(0.5, "line width in points")
+    line_color: tuple = _f((0, 0, 0), "colour of fold/cut lines", cli=False)
+    dash: tuple = _f((3, 3), "dash pattern (dash, gap) in points", cli=False)
+    marker_color: tuple = _f(
+        (0.85, 0.10, 0.10),
+        "preferred colour of the half-height mark on the side tabs "
+        "(black or white is used instead when it would be hard to see)",
+        cli=False)
 
-# Roof material: "wood" | "tiles" | "thatch"
-ROOF_MATERIAL = "tiles"
+    # --- Textures ---
+    textures_enabled: bool = _f(False, "paint textures (otherwise only lines)")
+    wall_material: str = _f(
+        "wood", "wall material", choices=lambda: list(WALL_PALETTES))
+    roof_material: str = _f(
+        "thatch", "roof material", choices=lambda: list(ROOF_PALETTES))
+    generate_all_variants: bool = _f(
+        False, "generate every wall/roof material combination")
+    seed: int = _f(7, "different seed, different variation of the textures")
+    texture_on_roof_overhang: bool = _f(
+        True, "texture also covers the extra margin of the roof sheet")
+    reuse_textures: bool = _f(
+        True, "draw each texture once per PDF and reuse it for every copy "
+              "(smaller, faster files)")
 
-# If True, generates ALL wall/roof combinations (9 houses),
-# each with its own PDFs. Ignores the two settings above.
-GENERATE_ALL_VARIANTS = False
+    # --- Door and windows ---
+    door_and_windows: bool = _f(True, "draw door and windows")
+    door_on: str = _f("short", "side of the house with the door",
+                      choices=["short", "long"])
+    cell_cm: float = _f(2.5, "side of a game square")
+    meters_per_cell: float = _f(1.5, "size of a game square in the fiction")
+    door_width_min_m: float = _f(1.0, "door width on a 3-square wall")
+    door_width_max_m: float = _f(1.5, "door width on a 5-square wall or more")
+    door_height_m: float = _f(2.0, "door height")
+    door_arched: bool = _f(True, "door with a rounded top")
+    window_width_m: float = _f(0.8, "window width")
+    window_height_m: float = _f(0.9, "window height")
+    window_sill_m: float = _f(1.0, "height of the window sill above the ground")
+    round_window_radius_m: float = _f(0.25, "radius of the small window in the gable")
 
-# Change the number to get a different version of the same
-# textures (bricks, wood grain, etc.)
-SEED = 7
+    # --- Complete PDF ---
+    paper: str = _f("A4", "paper size of the complete PDF",
+                    choices=lambda: list(PAPER_SIZES))
+    page_margin_cm: float = _f(0.5, "white margin along the edges of the page")
+    copy_gap_cm: float = _f(0.5, "gap between two pieces")
+    houses: Optional[int] = _f(
+        None, "number of houses to print. Without it, every page is "
+              "filled with as many copies of one piece as fit",
+        type=int)
+    mix_pieces: bool = _f(
+        False, "with --houses: pack different pieces on the same page "
+               "to save paper")
+    allow_rotation: bool = _f(True, "allow rotating pieces by 90 degrees")
+    one_door_per_house: bool = _f(
+        True, "only one wall per house gets the door (the other gets a "
+              "window in its place)")
+    joint_labels: bool = _f(
+        True, "write corner letters on the side tabs: tabs with the same "
+              "letter go together")
+    calibration_ruler: bool = _f(
+        True, "draw a 5 cm ruler on every page of the complete PDF, to "
+              "check the print scale")
 
-# Roof: True = the texture covers the whole sheet (the enlarged
-# part is a visible overhang). False = the texture covers only
-# the base size and the margin gets the plain colour only.
-TEXTURE_ON_ROOF_OVERHANG = True
-
-
-# --- DOOR AND WINDOWS ---
-
-DOOR_AND_WINDOWS = True
-
-# Which side of the house gets the door: "short" | "long"
-DOOR_ON = "short"
-
-# Side of a game square and its size in the fiction:
-# 2.5 cm = 1.5 m
-CELL_CM = 2.5
-METERS_PER_CELL = 1.5
-
-# Real-world sizes (in metres) of door and windows.
-# Door width grows with the wall:
-# MIN for a 3-square wall, MAX for 5 squares or more
-DOOR_WIDTH_MIN_M = 1.0
-DOOR_WIDTH_MAX_M = 1.5
-DOOR_HEIGHT_M = 2.0
-DOOR_ARCHED = True          # door with a rounded top
-
-WINDOW_WIDTH_M = 0.8
-WINDOW_HEIGHT_M = 0.9
-WINDOW_SILL_M = 1.0         # height of the sill above the ground
-ROUND_WINDOW_RADIUS_M = 0.25  # small window in the gable
-
-
-# --- COMPLETE PDF (A4) ---
-
-# White margin along the edges of the A4 page
-A4_MARGIN_CM = 0.5
-
-# Gap between two copies of the same piece
-COPY_GAP_CM = 0.5
-
-# Allowed layouts (columns, rows), most preferred first:
-# 4 copies are tried first, then 2, then 1.
-# (to also try 6 copies, add (3, 2) and (2, 3) at the top)
-LAYOUTS = [
-    (2, 2), (4, 1), (1, 4),   # 4 copies
-    (2, 1), (1, 2),           # 2 copies
-    (1, 1),                   # 1 copy
-]
-
-# If True, in the complete PDF only half of the copies of the wall
-# with the door get the door (the others get a window in its
-# place), so every house ends up with a single door.
-HALVE_DOORS_ON_COPIES = True
-
-# Base name of the PDFs
-BASE_NAME = "house_DnD"
+    # --- Output ---
+    output_dir: str = _f("output", "folder for the PDFs (relative to this script)")
+    base_name: str = _f("house_DnD", "base name of the PDFs")
 
 
 # ============================================================
 # COLOURS
 # ============================================================
 
-WALLS = {
-    "brick": {"base": (0.60, 0.25, 0.20), "mortar": (0.82, 0.79, 0.72)},
-    "stone": {"base": (0.58, 0.58, 0.58), "mortar": (0.30, 0.30, 0.30)},
-    "wood":  {"base": (0.55, 0.37, 0.21)},
-}
-
-ROOFS = {
-    "wood":   {"base": (0.42, 0.28, 0.16)},
-    "tiles":  {"base": (0.78, 0.38, 0.20)},
-    "thatch": {"base": (0.86, 0.71, 0.34)},
-}
-
 FRAME = (0.30, 0.20, 0.12)
 GLASS = (0.70, 0.85, 0.95)
+GLINT = (0.93, 0.97, 1.00)
 DOOR_PLANKS = (0.42, 0.26, 0.13)
-BRASS = (0.85, 0.70, 0.25)
+BRASS = (0.88, 0.72, 0.27)
 DARK_OUTLINE = (0.15, 0.10, 0.05)
+
+# Frame thickness of windows and door, in cm
+WINDOW_FRAME_CM = 0.10
+DOOR_FRAME_CM = 0.12
+
+# Shade of each door plank (slightly different, for a wooden look)
+PLANK_SHADES = (1.00, 0.90, 1.06, 0.95)
+
+PAPER_SIZES = {"A4": A4, "Letter": letter}
+
+# Space reserved at the bottom of the page for the calibration ruler
+RULER_STRIP_CM = 1.0
 
 
 # ============================================================
 # UTILITIES
 # ============================================================
 
-def meters(m):
+def meters(cfg, m):
     """Converts metres of the fiction into PDF points
-    (2.5 cm = 1.5 m)."""
-    return m * (CELL_CM / METERS_PER_CELL) * cm
+    (by default 2.5 cm = 1.5 m)."""
+    return m * (cfg.cell_cm / cfg.meters_per_cell) * cm
 
 
 def vary(color, rnd, amplitude):
@@ -182,6 +167,29 @@ def vary(color, rnd, amplitude):
 
 def darken(color, factor):
     return tuple(max(0.0, min(1.0, v * factor)) for v in color)
+
+
+def _linear(v):
+    return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+
+
+def luminance(color):
+    r, g, b = (_linear(v) for v in color)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast_ratio(a, b):
+    la, lb = luminance(a), luminance(b)
+    return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+
+
+def readable_on(base, preferred, minimum=3.0):
+    """Returns `preferred` if it is easy to see on `base`, otherwise
+    black or white, whichever contrasts more."""
+    if contrast_ratio(base, preferred) >= minimum:
+        return preferred
+    return max(((0, 0, 0), (1, 1, 1)),
+               key=lambda color: contrast_ratio(base, color))
 
 
 def fill_path(c, path, color):
@@ -202,25 +210,70 @@ def polygon(c, points):
     return p
 
 
-def check_dimensions():
-    """Warns if the measurements are not multiples of a square."""
-    dimensions = [("WIDTH_CM", WIDTH_CM), ("HEIGHT_CM", HEIGHT_CM)]
-    if GENERATE_FULL_HOUSE:
-        dimensions.append(("LENGTH_CM", LENGTH_CM))
+def validate(cfg):
+    """Raises ValueError with a readable message if a setting is wrong."""
+    errors = []
 
+    if cfg.wall_material not in WALL_PALETTES:
+        errors.append(f"wall_material must be one of {list(WALL_PALETTES)} "
+                      f"(got {cfg.wall_material!r})")
+    if cfg.roof_material not in ROOF_PALETTES:
+        errors.append(f"roof_material must be one of {list(ROOF_PALETTES)} "
+                      f"(got {cfg.roof_material!r})")
+    if cfg.door_on not in ("short", "long"):
+        errors.append(f"door_on must be 'short' or 'long' (got {cfg.door_on!r})")
+    if cfg.paper not in PAPER_SIZES:
+        errors.append(f"paper must be one of {list(PAPER_SIZES)} "
+                      f"(got {cfg.paper!r})")
+    if cfg.houses is not None and cfg.houses < 1:
+        errors.append(f"houses must be at least 1 (got {cfg.houses})")
+
+    for name in ("width_cm", "length_cm", "height_cm", "tab_width_cm",
+                 "roof_height_cm", "cell_cm", "meters_per_cell"):
+        if getattr(cfg, name) <= 0:
+            errors.append(f"{name} must be positive (got {getattr(cfg, name)})")
+
+    if errors:
+        raise ValueError("\n".join(errors))
+
+
+def check_dimensions(cfg):
+    """Returns a warning for every measurement that is not a multiple
+    of a game square."""
+    dimensions = [("width_cm", cfg.width_cm), ("height_cm", cfg.height_cm)]
+    if cfg.generate_full_house:
+        dimensions.append(("length_cm", cfg.length_cm))
+
+    warnings = []
     for name, value in dimensions:
-        squares = value / CELL_CM
+        squares = value / cfg.cell_cm
         if abs(squares - round(squares)) > 1e-6:
-            print(f"WARNING: {name} = {value} cm is not a multiple "
-                  f"of {CELL_CM} cm ({squares:.2f} squares).")
+            warnings.append(f"WARNING: {name} = {value} cm is not a multiple "
+                            f"of {cfg.cell_cm} cm ({squares:.2f} squares).")
+    return warnings
 
 
 # ============================================================
 # WALL TEXTURES
 # Each one fills the rectangle (x0, y0)-(x1, y1);
 # clipping to the exact shape is done by the caller.
+# To add a material, write a function and register it with
+# @wall_texture("name", base=(r, g, b), ...).
 # ============================================================
 
+WALL_TEXTURES = {}
+WALL_PALETTES = {}
+
+
+def wall_texture(name, **palette):
+    def register(function):
+        WALL_TEXTURES[name] = function
+        WALL_PALETTES[name] = palette
+        return function
+    return register
+
+
+@wall_texture("brick", base=(0.60, 0.25, 0.20), mortar=(0.82, 0.79, 0.72))
 def texture_brick(c, x0, y0, x1, y1, pal, rnd):
     c.setFillColorRGB(*pal["mortar"])
     c.rect(x0, y0, x1 - x0, y1 - y0, stroke=0, fill=1)
@@ -250,6 +303,7 @@ def texture_brick(c, x0, y0, x1, y1, pal, rnd):
         row += 1
 
 
+@wall_texture("stone", base=(0.58, 0.58, 0.58), mortar=(0.30, 0.30, 0.30))
 def texture_stone(c, x0, y0, x1, y1, pal, rnd):
     c.setFillColorRGB(*pal["mortar"])
     c.rect(x0, y0, x1 - x0, y1 - y0, stroke=0, fill=1)
@@ -282,6 +336,7 @@ def texture_stone(c, x0, y0, x1, y1, pal, rnd):
         y += height
 
 
+@wall_texture("wood", base=(0.55, 0.37, 0.21))
 def texture_wood_wall(c, x0, y0, x1, y1, pal, rnd):
     """HORIZONTAL planks, with grain, knots and joints."""
     plank_height = 0.6 * cm
@@ -328,19 +383,24 @@ def texture_wood_wall(c, x0, y0, x1, y1, pal, rnd):
         y += plank_height
 
 
-WALL_TEXTURES = {
-    "brick": texture_brick,
-    "stone": texture_stone,
-    "wood": texture_wood_wall,
-}
-
-
 # ============================================================
 # ROOF TEXTURES
 # Drawn in a local system where the eaves are at y = 0
 # and the ridge at y = d. The same function is used for both
 # slopes (the second one is mirrored).
 # ============================================================
+
+ROOF_TEXTURES = {}
+ROOF_PALETTES = {}
+
+
+def roof_texture(name, **palette):
+    def register(function):
+        ROOF_TEXTURES[name] = function
+        ROOF_PALETTES[name] = palette
+        return function
+    return register
+
 
 def _element_rows(c, w, d, pal, rnd, tw, rh, length, curved, amplitude):
     """Rows of tiles (curved) or shingles (straight), from the eaves
@@ -386,18 +446,21 @@ def _element_rows(c, w, d, pal, rnd, tw, rh, length, curved, amplitude):
         row += 1
 
 
+@roof_texture("tiles", base=(0.78, 0.38, 0.20))
 def texture_roof_tiles(c, w, d, pal, rnd):
     _element_rows(c, w, d, pal, rnd,
                   tw=0.9 * cm, rh=0.55 * cm, length=1.3 * cm,
                   curved=True, amplitude=0.12)
 
 
+@roof_texture("wood", base=(0.42, 0.28, 0.16))
 def texture_roof_wood(c, w, d, pal, rnd):
     _element_rows(c, w, d, pal, rnd,
                   tw=0.75 * cm, rh=0.6 * cm, length=0.9 * cm,
                   curved=False, amplitude=0.16)
 
 
+@roof_texture("thatch", base=(0.86, 0.71, 0.34))
 def texture_roof_thatch(c, w, d, pal, rnd):
     bh = 0.9 * cm
     row = 0
@@ -434,97 +497,151 @@ def texture_roof_thatch(c, w, d, pal, rnd):
         row += 1
 
 
-ROOF_TEXTURES = {
-    "tiles": texture_roof_tiles,
-    "wood": texture_roof_wood,
-    "thatch": texture_roof_thatch,
-}
-
-
 # ============================================================
 # DOOR AND WINDOWS
 # ============================================================
 
-def window(c, cx, cy, w, h):
-    # Sill
-    c.setFillColorRGB(*FRAME)
-    c.rect(cx - w / 2 - 0.05 * cm, cy - h / 2 - 0.07 * cm,
-           w + 0.10 * cm, 0.07 * cm, stroke=0, fill=1)
+def _glint(c, x0, y0, x1, y1):
+    """Small diagonal highlight in a window pane."""
+    pw, ph = x1 - x0, y1 - y0
+    c.setStrokeColorRGB(*GLINT)
+    c.setLineWidth(0.6)
+    c.line(x0 + 0.18 * pw, y0 + 0.55 * ph, x0 + 0.42 * pw, y0 + 0.85 * ph)
 
-    # Frame and glass
-    border = 0.07 * cm
+
+def window(c, cx, cy, w, h):
+    f = WINDOW_FRAME_CM * cm
+
+    # Sill, wider than the window
     c.setFillColorRGB(*FRAME)
     c.setStrokeColorRGB(*DARK_OUTLINE)
+    c.setLineWidth(0.3)
+    c.rect(cx - w / 2 - 0.09 * cm, cy - h / 2 - 0.11 * cm,
+           w + 0.18 * cm, 0.11 * cm, stroke=1, fill=1)
+
+    # Frame
     c.setLineWidth(0.4)
     c.rect(cx - w / 2, cy - h / 2, w, h, stroke=1, fill=1)
 
+    # Glass
+    gx0, gx1 = cx - w / 2 + f, cx + w / 2 - f
+    gy0, gy1 = cy - h / 2 + f, cy + h / 2 - f
     c.setFillColorRGB(*GLASS)
-    c.rect(cx - w / 2 + border, cy - h / 2 + border,
-           w - 2 * border, h - 2 * border, stroke=0, fill=1)
+    c.rect(gx0, gy0, gx1 - gx0, gy1 - gy0, stroke=0, fill=1)
+
+    # Highlights in each of the four panes
+    for px0, px1 in ((gx0, cx), (cx, gx1)):
+        for py0, py1 in ((gy0, cy), (cy, gy1)):
+            _glint(c, px0, py0, px1, py1)
 
     # Cross
     c.setStrokeColorRGB(*FRAME)
-    c.setLineWidth(1.0)
+    c.setLineWidth(1.3)
     c.line(cx, cy - h / 2, cx, cy + h / 2)
     c.line(cx - w / 2, cy, cx + w / 2, cy)
 
 
 def round_window(c, cx, cy, r):
+    f = WINDOW_FRAME_CM * cm
+
     c.setFillColorRGB(*FRAME)
     c.setStrokeColorRGB(*DARK_OUTLINE)
     c.setLineWidth(0.4)
     c.circle(cx, cy, r, stroke=1, fill=1)
 
     c.setFillColorRGB(*GLASS)
-    c.circle(cx, cy, r - 0.05 * cm, stroke=0, fill=1)
+    c.circle(cx, cy, r - f, stroke=0, fill=1)
+
+    _glint(c, cx - r + f, cy - r + f, cx + r - f, cy + r - f)
 
     c.setStrokeColorRGB(*FRAME)
-    c.setLineWidth(1.0)
+    c.setLineWidth(1.3)
     c.line(cx - r, cy, cx + r, cy)
     c.line(cx, cy - r, cx, cy + r)
 
 
-def door(c, cx, y, w, h):
-    x = cx - w / 2
+def _door_path(c, cx, y, w, h, grow, arched):
+    """Outline of the door, optionally enlarged by `grow` on the
+    left, right and top (used for the frame)."""
+    x = cx - w / 2 - grow
+    ww = w + 2 * grow
 
     p = c.beginPath()
-    if DOOR_ARCHED and h > w / 2:
+    if arched and h > w / 2:
+        r = ww / 2
+        yc = y + h - w / 2          # height of the centre of the arch
         p.moveTo(x, y)
-        p.lineTo(x, y + h - w / 2)
-        p.arcTo(x, y + h - w, x + w, y + h, 180, -180)
-        p.lineTo(x + w, y)
+        p.lineTo(x, yc)
+        p.arcTo(x, yc - r, x + ww, yc + r, 180, -180)
+        p.lineTo(x + ww, y)
         p.close()
-        planks_height = h - w / 2
     else:
-        p.rect(x, y, w, h)
-        planks_height = h
+        p.rect(x, y, ww, h + grow)
+    return p
 
-    c.setFillColorRGB(*DOOR_PLANKS)
-    c.setStrokeColorRGB(*FRAME)
-    c.setLineWidth(1.2)
-    c.drawPath(p, stroke=1, fill=1)
 
-    # Planks
-    c.setStrokeColorRGB(*darken(DOOR_PLANKS, 0.6))
+def door(c, cx, y, w, h, arched):
+    f = DOOR_FRAME_CM * cm
+    x0 = cx - w / 2
+
+    # Frame, a little larger than the door
+    c.setFillColorRGB(*FRAME)
+    c.setStrokeColorRGB(*DARK_OUTLINE)
+    c.setLineWidth(0.4)
+    c.drawPath(_door_path(c, cx, y, w, h, f, arched), stroke=1, fill=1)
+
+    # Planks: clipped to the door shape, so they run up to the very
+    # top, even inside the arch
+    leaf = _door_path(c, cx, y, w, h, 0, arched)
+    c.saveState()
+    c.clipPath(leaf, stroke=0, fill=0)
+
+    n = len(PLANK_SHADES)
+    pw = w / n
+    top = y + h + f
+    for k in range(n):
+        c.setFillColorRGB(*darken(DOOR_PLANKS, PLANK_SHADES[k]))
+        c.rect(x0 + k * pw, y, pw, top - y, stroke=0, fill=1)
+
+    c.setStrokeColorRGB(*darken(DOOR_PLANKS, 0.55))
     c.setLineWidth(0.5)
-    for k in (1, 2):
-        c.line(x + k * w / 3, y, x + k * w / 3, y + planks_height)
+    for k in range(1, n):
+        c.line(x0 + k * pw, y, x0 + k * pw, top)
+    c.restoreState()
 
-    # Handle
+    # Outline of the door leaf
+    c.setStrokeColorRGB(*darken(FRAME, 0.6))
+    c.setLineWidth(0.6)
+    c.drawPath(leaf, stroke=1, fill=0)
+
+    # Hinges on the left
+    c.setFillColorRGB(*darken(FRAME, 0.55))
+    for t in (0.22, 0.62):
+        c.rect(x0 + 0.02 * cm, y + h * t, 0.24 * cm, 0.075 * cm,
+               stroke=0, fill=1)
+
+    # Handle: backplate, bigger knob and a small highlight
+    hx = cx + w * 0.30
+    hy = y + h * 0.42
+    c.setFillColorRGB(*darken(BRASS, 0.55))
+    c.circle(hx, hy, 0.105 * cm, stroke=0, fill=1)
     c.setFillColorRGB(*BRASS)
-    c.circle(cx + w * 0.28, y + h * 0.4, 0.04 * cm, stroke=0, fill=1)
+    c.circle(hx, hy, 0.078 * cm, stroke=0, fill=1)
+    c.setFillColorRGB(1.0, 0.95, 0.72)
+    c.circle(hx - 0.022 * cm, hy + 0.024 * cm, 0.026 * cm,
+             stroke=0, fill=1)
 
 
-def door_width(width_cm):
+def door_width(cfg, width_cm):
     """Door width (in points) based on the wall:
-    DOOR_WIDTH_MIN_M with 3 squares, DOOR_WIDTH_MAX_M with 5 or more."""
-    squares = width_cm / CELL_CM
-    t = (squares - 3) / 2
-    t = max(0.0, min(1.0, t))
-    return meters(DOOR_WIDTH_MIN_M + t * (DOOR_WIDTH_MAX_M - DOOR_WIDTH_MIN_M))
+    door_width_min_m with 3 squares, door_width_max_m with 5 or more."""
+    squares = width_cm / cfg.cell_cm
+    t = max(0.0, min(1.0, (squares - 3) / 2))
+    return meters(cfg, cfg.door_width_min_m
+                  + t * (cfg.door_width_max_m - cfg.door_width_min_m))
 
 
-def opening_positions(width_cm, door_layout, door_present):
+def opening_positions(cfg, width_cm, door_layout, door_present):
     """
     Returns [(type, offset from the centre in points)].
 
@@ -532,9 +649,9 @@ def opening_positions(width_cm, door_layout, door_present):
     missing), windows one square from the centre, then three...
     No-door layout: windows in the centre, two squares away, etc.
     """
-    cell = CELL_CM * cm
+    cell = cfg.cell_cm * cm
     half = width_cm * cm / 2
-    ww = meters(WINDOW_WIDTH_M)
+    ww = meters(cfg, cfg.window_width_m)
     margin = 0.3 * cm
 
     out = []
@@ -558,26 +675,27 @@ def opening_positions(width_cm, door_layout, door_present):
     return out
 
 
-def draw_openings(c, x1, y1, width_cm, height_cm,
+def draw_openings(cfg, c, x1, y1, width_cm, height_cm,
                   door_layout, door_present):
     cx0 = x1 + width_cm * cm / 2
     height = height_cm * cm
 
-    for kind, off in opening_positions(width_cm, door_layout,
+    for kind, off in opening_positions(cfg, width_cm, door_layout,
                                        door_present):
         cx = cx0 + off
 
         if kind == "door":
-            h = min(meters(DOOR_HEIGHT_M), height - 0.3 * cm)
-            door(c, cx, y1, door_width(width_cm), h)
+            h = min(meters(cfg, cfg.door_height_m), height - 0.4 * cm)
+            door(c, cx, y1, door_width(cfg, width_cm), h, cfg.door_arched)
         else:
-            wh = min(meters(WINDOW_HEIGHT_M), height * 0.6)
-            sill = min(meters(WINDOW_SILL_M), height - wh - 0.2 * cm)
-            window(c, cx, y1 + sill + wh / 2, meters(WINDOW_WIDTH_M), wh)
+            wh = min(meters(cfg, cfg.window_height_m), height * 0.6)
+            sill = min(meters(cfg, cfg.window_sill_m),
+                       height - wh - 0.2 * cm)
+            window(c, cx, y1 + sill + wh / 2, meters(cfg, cfg.window_width_m), wh)
 
 
 # ============================================================
-# FUNCTION TO COMPUTE A PARALLEL LINE
+# GEOMETRY
 # ============================================================
 
 def outward_parallel(x1, y1, x2, y2, distance):
@@ -603,28 +721,54 @@ def outward_parallel(x1, y1, x2, y2, distance):
     )
 
 
-# ============================================================
-# LENGTH OF THE SLOPING SIDE OF THE TRIANGLE
-# ============================================================
-
-def slope_side_cm(inner_width_cm):
+def slope_side_cm(cfg, inner_width_cm):
     """Length (in cm) of the sloping side of the triangle.
     The base of the triangle is the inner width."""
-    return math.hypot(inner_width_cm / 2, ROOF_HEIGHT_CM)
+    return math.hypot(inner_width_cm / 2, cfg.roof_height_cm)
 
 
 # ============================================================
-# FIGURE = (name, width, height, draw function, has_door)
+# PIECES
 #
-# The draw function draws the figure with the bottom-left corner
-# of its bounding box at the origin (0, 0), so it can be placed
-# anywhere (single sheet or A4).
-# draw(c, door_present=True): if door_present=False, the wall that
-# would have the door gets a window in its place.
+# A Piece knows its size and how to draw itself with the
+# bottom-left corner of its bounding box at the origin (0, 0),
+# so it can be placed anywhere (single sheet or full page).
+#   body(c, door_present)   colours, textures, door, windows
+#   outline(c, labels)      fold/cut lines, tab marks and letters
+# An Item is one physical copy of a piece on paper.
 # ============================================================
 
-def wall_figure(name, width_cm, height_cm, with_roof,
-                has_door, material):
+@dataclass(frozen=True)
+class Piece:
+    name: str
+    role: str                   # "short" | "long" | "roof" | "wall"
+    width: float                # points
+    height: float               # points
+    body: Callable
+    outline: Callable
+    has_door: bool = False
+    per_house: int = 1          # copies needed for one house
+
+
+@dataclass(frozen=True)
+class Item:
+    piece: Piece
+    door: bool = True
+    labels: Optional[tuple] = None      # (left tab, right tab)
+
+
+# Corner letters, going around the house: tabs with the same letter
+# are glued together. Keys are (role, wall index within the house).
+JOINTS = {
+    ("short", 0): ("D", "A"),
+    ("long", 0): ("A", "B"),
+    ("short", 1): ("B", "C"),
+    ("long", 1): ("C", "D"),
+}
+
+
+def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
+               has_door, material, seed_id, per_house=2):
     """
     width_cm and height_cm are the INNER measurements.
 
@@ -636,9 +780,9 @@ def wall_figure(name, width_cm, height_cm, with_roof,
     lines. The corners between two tabs stay white (they are cut away).
     """
 
-    B = TAB_WIDTH_CM * cm
-    ROOF_H = ROOF_HEIGHT_CM * cm
-    FLAP = ROOF_FLAP_CM * cm
+    B = cfg.tab_width_cm * cm
+    ROOF_H = cfg.roof_height_cm * cm
+    FLAP = cfg.roof_flap_cm * cm
 
     # Size of the outer rectangle (inner + tabs)
     W = width_cm * cm + 2 * B
@@ -666,11 +810,9 @@ def wall_figure(name, width_cm, height_cm, with_roof,
 
         # Flaps: parallel to the two sloping sides
         flap_left = outward_parallel(
-            base_left, base_y, apex_x, apex_y, FLAP
-        )
+            base_left, base_y, apex_x, apex_y, FLAP)
         flap_right = outward_parallel(
-            apex_x, apex_y, base_right, base_y, FLAP
-        )
+            apex_x, apex_y, base_right, base_y, FLAP)
 
         # The drawing ends where the roof border ends
         points_x = [0, W, flap_left[0], flap_left[2],
@@ -687,88 +829,94 @@ def wall_figure(name, width_cm, height_cm, with_roof,
         bbox_w = W
         bbox_h = H
 
+    palette = WALL_PALETTES[material] if cfg.textures_enabled else None
+    tab_color = palette["base"] if palette else (1, 1, 1)
+    marker_color = readable_on(tab_color, cfg.marker_color)
+    text_color = readable_on(tab_color, (0, 0, 0), minimum=4.5)
+
     # --------------------------------------------------------
-    # Drawing
+    # Body: colours, texture, door and windows
     # --------------------------------------------------------
 
-    def draw(c, door_present=True):
+    def body(c, door_present=True):
+        if palette is None:
+            return
+
         c.saveState()
         c.translate(offset_x, 0)
 
-        # ----------------------------------------------------
-        # Base colour and texture
-        # ----------------------------------------------------
+        rnd = random.Random(f"{cfg.seed}/{seed_id}/{material}")
 
-        if TEXTURES_ENABLED:
-            pal = WALLS[material]
-            rnd = random.Random(f"{SEED}-{name}-{material}")
+        # Base colour: central band (side tabs + inner rectangle) and
+        # bottom tab (and top tab without roof). Corners stay white.
+        if with_roof:
+            zones = [(x1, 0, x2, y1), (0, y1, W, y2)]
+        else:
+            zones = [(x1, 0, x2, H), (0, y1, W, y2)]
 
-            # Base colour: central band (side tabs + inner
-            # rectangle) and bottom tab (and top tab without
-            # roof). The corners stay white.
+        for xa, ya, xb, yb in zones:
+            fill_path(c, polygon(c, [(xa, ya), (xb, ya),
+                                     (xb, yb), (xa, yb)]),
+                      palette["base"])
+
+        if with_roof:
+            # Triangle and flaps
+            fill_path(c, polygon(c, [(base_left, base_y),
+                                     (base_right, base_y),
+                                     (apex_x, apex_y)]),
+                      palette["base"])
+            fill_path(c, polygon(c, [(base_left, base_y),
+                                     (flap_left[0], flap_left[1]),
+                                     (flap_left[2], flap_left[3]),
+                                     (apex_x, apex_y)]),
+                      palette["base"])
+            fill_path(c, polygon(c, [(apex_x, apex_y),
+                                     (flap_right[0], flap_right[1]),
+                                     (flap_right[2], flap_right[3]),
+                                     (base_right, base_y)]),
+                      palette["base"])
+
+        # Texture, clipped inside the solid lines
+        c.saveState()
+        area = c.beginPath()
+        area.moveTo(x1, y1)
+        area.lineTo(x2, y1)
+        area.lineTo(x2, y2)
+        if with_roof:
+            area.lineTo(apex_x, apex_y)
+        area.lineTo(x1, y2)
+        area.close()
+        c.clipPath(area, stroke=0, fill=0)
+
+        top_y = apex_y if with_roof else y2
+        WALL_TEXTURES[material](c, x1, y1, x2, top_y, palette, rnd)
+        c.restoreState()
+
+        # Door and windows
+        if cfg.door_and_windows:
+            draw_openings(cfg, c, x1, y1, width_cm, height_cm,
+                          has_door, door_present)
             if with_roof:
-                zones = [(x1, 0, x2, y1), (0, y1, W, y2)]
-            else:
-                zones = [(x1, 0, x2, H), (0, y1, W, y2)]
+                # Small round window in the gable
+                round_window(c, apex_x, base_y + 0.4 * ROOF_H,
+                             meters(cfg, cfg.round_window_radius_m))
 
-            for xa, ya, xb, yb in zones:
-                fill_path(c, polygon(c, [(xa, ya), (xb, ya),
-                                         (xb, yb), (xa, yb)]),
-                          pal["base"])
+        c.restoreState()
 
-            if with_roof:
-                # Triangle and flaps
-                fill_path(c, polygon(c, [(base_left, base_y),
-                                         (base_right, base_y),
-                                         (apex_x, apex_y)]),
-                          pal["base"])
-                fill_path(c, polygon(c, [(base_left, base_y),
-                                         (flap_left[0], flap_left[1]),
-                                         (flap_left[2], flap_left[3]),
-                                         (apex_x, apex_y)]),
-                          pal["base"])
-                fill_path(c, polygon(c, [(apex_x, apex_y),
-                                         (flap_right[0], flap_right[1]),
-                                         (flap_right[2], flap_right[3]),
-                                         (base_right, base_y)]),
-                          pal["base"])
+    # --------------------------------------------------------
+    # Outline: lines, tab marks and corner letters
+    # --------------------------------------------------------
 
-            # Texture, clipped inside the solid lines
-            c.saveState()
-            area = c.beginPath()
-            area.moveTo(x1, y1)
-            area.lineTo(x2, y1)
-            area.lineTo(x2, y2)
-            if with_roof:
-                area.lineTo(apex_x, apex_y)
-            area.lineTo(x1, y2)
-            area.close()
-            c.clipPath(area, stroke=0, fill=0)
+    def outline(c, labels=None):
+        c.saveState()
+        c.translate(offset_x, 0)
 
-            top_y = apex_y if with_roof else y2
-            WALL_TEXTURES[material](c, x1, y1, x2, top_y, pal, rnd)
-            c.restoreState()
-
-            # Door and windows
-            if DOOR_AND_WINDOWS:
-                draw_openings(c, x1, y1, width_cm, height_cm,
-                              has_door, door_present)
-                if with_roof:
-                    # Small round window in the gable
-                    round_window(c, apex_x,
-                                 base_y + 0.4 * ROOF_H,
-                                 meters(ROUND_WINDOW_RADIUS_M))
-
-        # ----------------------------------------------------
-        # Lines
-        # ----------------------------------------------------
-
-        c.setStrokeColorRGB(*LINE_COLOR)
-        c.setLineWidth(LINE_WIDTH)
+        c.setStrokeColorRGB(*cfg.line_color)
+        c.setLineWidth(cfg.line_width)
 
         # Outer outline (DASHED: it is the cut). It has a cross
         # shape: the corners between two tabs are removed.
-        c.setDash(*DASH)
+        c.setDash(*cfg.dash)
 
         p = c.beginPath()
         if with_roof:
@@ -805,10 +953,17 @@ def wall_figure(name, width_cm, height_cm, with_roof,
         # Mark at half height of the side tabs
         # (where to cut for the interlocking joint)
         ym = (y1 + y2) / 2
-        c.setStrokeColorRGB(*MARKER_COLOR)
+        c.setStrokeColorRGB(*marker_color)
         c.line(0, ym, x1, ym)
         c.line(x2, ym, W, ym)
-        c.setStrokeColorRGB(*LINE_COLOR)
+        c.setStrokeColorRGB(*cfg.line_color)
+
+        # Corner letters on the side tabs
+        if labels:
+            c.setFillColorRGB(*text_color)
+            c.setFont("Helvetica-Bold", 7)
+            c.drawCentredString(x1 / 2, ym + 0.22 * cm, labels[0])
+            c.drawCentredString((x2 + W) / 2, ym + 0.22 * cm, labels[1])
 
         # Inner rectangle (solid)
         c.setDash()
@@ -828,16 +983,14 @@ def wall_figure(name, width_cm, height_cm, with_roof,
         if with_roof:
 
             # Main triangle (solid)
-            c.setDash()
-
             c.line(base_left, base_y, apex_x, apex_y)
             c.line(apex_x, apex_y, base_right, base_y)
 
-            if DRAW_ROOF_BASE:
+            if cfg.draw_roof_base:
                 c.line(base_left, base_y, base_right, base_y)
 
             # Flaps (dashed)
-            c.setDash(*DASH)
+            c.setDash(*cfg.dash)
 
             # Left flap
             c.line(*flap_left)                                        # outer side
@@ -851,10 +1004,11 @@ def wall_figure(name, width_cm, height_cm, with_roof,
 
         c.restoreState()
 
-    return name, bbox_w, bbox_h, draw, has_door
+    return Piece(name, role, bbox_w, bbox_h, body, outline,
+                 has_door=has_door, per_house=per_house)
 
 
-def roof_figure(name, material):
+def roof_piece(cfg, material, seed_id):
     """
     Rectangular sheet with two equal slopes.
       - dashed outer border (cut)
@@ -863,52 +1017,55 @@ def roof_figure(name, material):
     Base size (from the walls):
       - length = inner length of the long wall
       - each slope = sloping side of the triangle + overhang
-    The sheet is then enlarged by ROOF_MARGIN_CM on every side.
+    The sheet is then enlarged by roof_margin_cm on every side.
     """
 
-    side = slope_side_cm(WIDTH_CM)
-    slope = side + ROOF_OVERHANG_CM
+    side = slope_side_cm(cfg, cfg.width_cm)
+    slope = side + cfg.roof_overhang_cm
 
-    base_length = LENGTH_CM
-    base_depth = 2 * slope
+    Wr = (cfg.length_cm + 2 * cfg.roof_margin_cm) * cm
+    Hr = (2 * slope + 2 * cfg.roof_margin_cm) * cm
 
-    Wr = (base_length + 2 * ROOF_MARGIN_CM) * cm
-    Hr = (base_depth + 2 * ROOF_MARGIN_CM) * cm
+    palette = ROOF_PALETTES[material] if cfg.textures_enabled else None
 
-    def draw(c, door_present=True):
+    def body(c, door_present=True):
+        if palette is None:
+            return
+
         c.saveState()
+        rnd = random.Random(f"{cfg.seed}/{seed_id}/{material}")
 
-        if TEXTURES_ENABLED:
-            pal = ROOFS[material]
-            rnd = random.Random(f"{SEED}-{name}-{material}")
+        # Base colour over the whole sheet
+        fill_path(c, polygon(c, [(0, 0), (Wr, 0), (Wr, Hr), (0, Hr)]),
+                  palette["base"])
 
-            # Base colour over the whole sheet
-            fill_path(c, polygon(c, [(0, 0), (Wr, 0), (Wr, Hr), (0, Hr)]),
-                      pal["base"])
+        # Margin without texture, if requested
+        m = 0 if cfg.texture_on_roof_overhang else cfg.roof_margin_cm * cm
 
-            # Margin without texture, if requested
-            m = 0 if TEXTURE_ON_ROOF_OVERHANG else ROOF_MARGIN_CM * cm
+        # Two slopes: the first from the bottom, the second mirrored
+        # from the top. In both the eaves are at y = 0 (local).
+        for half in (0, 1):
+            c.saveState()
+            if half == 1:
+                c.translate(0, Hr)
+                c.scale(1, -1)
 
-            # Two slopes: the first from the bottom, the second mirrored
-            # from the top. In both the eaves are at y = 0 (local).
-            for half in (0, 1):
-                c.saveState()
-                if half == 1:
-                    c.translate(0, Hr)
-                    c.scale(1, -1)
+            area = c.beginPath()
+            area.rect(m, m, Wr - 2 * m, Hr / 2 - m)
+            c.clipPath(area, stroke=0, fill=0)
 
-                area = c.beginPath()
-                area.rect(m, m, Wr - 2 * m, Hr / 2 - m)
-                c.clipPath(area, stroke=0, fill=0)
+            ROOF_TEXTURES[material](c, Wr, Hr / 2, palette, rnd)
+            c.restoreState()
 
-                ROOF_TEXTURES[material](c, Wr, Hr / 2, pal, rnd)
-                c.restoreState()
+        c.restoreState()
 
-        c.setStrokeColorRGB(*LINE_COLOR)
-        c.setLineWidth(LINE_WIDTH)
+    def outline(c, labels=None):
+        c.saveState()
+        c.setStrokeColorRGB(*cfg.line_color)
+        c.setLineWidth(cfg.line_width)
 
         # Outer border (cut)
-        c.setDash(*DASH)
+        c.setDash(*cfg.dash)
         c.rect(0, 0, Wr, Hr, stroke=1, fill=0)
 
         # Ridge (fold), in the middle
@@ -917,213 +1074,560 @@ def roof_figure(name, material):
 
         c.restoreState()
 
-    return name, Wr, Hr, draw, False
+    return Piece("roof", "roof", Wr, Hr, body, outline, per_house=1)
+
+
+def make_pieces(cfg, wall_material, roof_material):
+    """The three pieces of a house: short wall, long wall, roof."""
+    short_wall = wall_piece(
+        cfg, "short wall", "short", cfg.width_cm, cfg.height_cm,
+        True, cfg.door_on == "short", wall_material, seed_id=1)
+    long_wall = wall_piece(
+        cfg, "long wall", "long", cfg.length_cm, cfg.height_cm,
+        False, cfg.door_on == "long", wall_material, seed_id=2)
+    roof = roof_piece(cfg, roof_material, seed_id=3)
+    return short_wall, long_wall, roof
 
 
 # ============================================================
-# A4 LAYOUT
+# PACKING
+# MaxRects: places rectangles in a page, trying both
+# orientations, so that as many as possible fit.
 # ============================================================
 
-def compute_layout(w, h, page_w, page_h):
-    """
-    Returns (columns, rows) to use on a page of the given
-    size, or (0, 0) if the figure does not fit.
-    """
+def _intersects(a, b, eps=1e-6):
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    return not (bx >= ax + aw - eps or bx + bw <= ax + eps
+                or by >= ay + ah - eps or by + bh <= ay + eps)
 
-    m = A4_MARGIN_CM * cm
-    g = COPY_GAP_CM * cm
+
+def _contains(a, b, eps=1e-6):
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    return (bx >= ax - eps and by >= ay - eps
+            and bx + bw <= ax + aw + eps and by + bh <= ay + ah + eps)
+
+
+def _split_free(free, placed):
+    """Cuts the placed rectangle out of every free rectangle."""
+    px, py, pw, ph = placed
+    result = []
+
+    for rect in free:
+        if not _intersects(rect, placed):
+            result.append(rect)
+            continue
+
+        fx, fy, fw, fh = rect
+        if px > fx:
+            result.append((fx, fy, px - fx, fh))
+        if px + pw < fx + fw:
+            result.append((px + pw, fy, fx + fw - (px + pw), fh))
+        if py > fy:
+            result.append((fx, fy, fw, py - fy))
+        if py + ph < fy + fh:
+            result.append((fx, py + ph, fw, fy + fh - (py + ph)))
+
+    # Drop duplicates and rectangles contained in another one
+    unique = list(dict.fromkeys(result))
+    return [r for i, r in enumerate(unique)
+            if not any(j != i and _contains(other, r)
+                       for j, other in enumerate(unique))]
+
+
+def maxrects_pack(sizes, bx, by, bw, bh, allow_rotation=True):
+    """
+    Packs rectangles (w, h) into the area starting at (bx, by) of size
+    (bw, bh). Returns {index: (x, y, rotated)} for the rectangles that
+    fit; the others are left out.
+    """
     eps = 1e-6
+    free = [(bx, by, bw, bh)]
+    placed = {}
 
-    max_columns = int((page_w - 2 * m + g) // (w + g) + eps)
-    max_rows = int((page_h - 2 * m + g) // (h + g) + eps)
+    # Biggest first; ties keep their original order
+    order = sorted(range(len(sizes)), key=lambda i: -max(sizes[i]))
 
-    for columns, rows in LAYOUTS:
-        if columns <= max_columns and rows <= max_rows:
-            return columns, rows
+    for i in order:
+        w, h = sizes[i]
+        best = None
 
-    return 0, 0
+        for fx, fy, fw, fh in free:
+            for rotated in ((False, True) if allow_rotation else (False,)):
+                pw, ph = (h, w) if rotated else (w, h)
+                if pw <= fw + eps and ph <= fh + eps:
+                    # Best short side fit
+                    score = (min(fw - pw, fh - ph), max(fw - pw, fh - ph))
+                    if best is None or score < best[0]:
+                        best = (score, fx, fy, pw, ph, rotated)
+
+        if best is None:
+            continue
+
+        _, x, y, pw, ph, rotated = best
+        placed[i] = (x, y, rotated)
+        free = _split_free(free, (x, y, pw, ph))
+
+    return placed
 
 
-def choose_orientation(w, h):
-    """
-    Tries A4 landscape and portrait and picks the one that
-    fits more copies (landscape if tied).
-    """
+@dataclass
+class Placement:
+    item: Item
+    x: float
+    y: float
+    rotated: bool
 
-    landscape_size = landscape(A4)
-    portrait_size = A4
 
-    col_l, row_l = compute_layout(w, h, *landscape_size)
-    col_p, row_p = compute_layout(w, h, *portrait_size)
+@dataclass
+class Page:
+    size: tuple
+    placements: list
 
-    if col_p * row_p > col_l * row_l:
-        return portrait_size, "portrait", col_p, row_p
 
-    return landscape_size, "landscape", col_l, row_l
+def _usable_area(cfg, page_size):
+    """(x, y, w, h) of the area of the page available for pieces."""
+    pw, ph = page_size
+    m = cfg.page_margin_cm * cm
+    strip = RULER_STRIP_CM * cm if cfg.calibration_ruler else 0
+    return m, m + strip, pw - 2 * m, ph - 2 * m - strip
+
+
+def pack_one_page(cfg, items, page_size):
+    """Places as many items as possible on one page.
+    Returns (placements, items that did not fit)."""
+    g = cfg.copy_gap_cm * cm
+    ux, uy, uw, uh = _usable_area(cfg, page_size)
+
+    # Inflating pieces and area by the gap keeps pieces apart
+    sizes = [(it.piece.width + g, it.piece.height + g) for it in items]
+    placed = maxrects_pack(sizes, ux, uy, uw + g, uh + g,
+                           cfg.allow_rotation)
+
+    placements = []
+    for i in sorted(placed):
+        x, y, rotated = placed[i]
+        placements.append(Placement(items[i], x, y, rotated))
+
+    rest = [it for i, it in enumerate(items) if i not in placed]
+
+    # Centre the block of pieces in the usable area
+    if placements:
+        def extent(p):
+            w, h = p.item.piece.width, p.item.piece.height
+            return (h, w) if p.rotated else (w, h)
+
+        min_x = min(p.x for p in placements)
+        min_y = min(p.y for p in placements)
+        max_x = max(p.x + extent(p)[0] for p in placements)
+        max_y = max(p.y + extent(p)[1] for p in placements)
+
+        dx = ux + (uw - (max_x - min_x)) / 2 - min_x
+        dy = uy + (uh - (max_y - min_y)) / 2 - min_y
+        for p in placements:
+            p.x += dx
+            p.y += dy
+
+    return placements, rest
+
+
+def pack_pages(cfg, items):
+    """Packs the items into as few pages as possible."""
+    base = PAPER_SIZES[cfg.paper]
+    pages = []
+    remaining = list(items)
+
+    while remaining:
+        best = None
+        for size in (landscape(base), base):
+            placed, rest = pack_one_page(cfg, remaining, size)
+            area = sum(p.item.piece.width * p.item.piece.height
+                       for p in placed)
+            if best is None or area > best[0] + 1e-6:
+                best = (area, size, placed, rest)
+
+        _, size, placed, rest = best
+
+        if not placed:
+            # The piece is bigger than the paper: it gets a page of its own
+            item = remaining[0]
+            piece = item.piece
+            print(f"WARNING: {piece.name} "
+                  f"({piece.width / cm:.2f} × {piece.height / cm:.2f} cm) "
+                  f"does not fit on {cfg.paper}, placing it alone on a "
+                  f"larger page.")
+            ux, uy, _, _ = _usable_area(cfg, (0, 0))
+            m = cfg.page_margin_cm * cm
+            size = (piece.width + 2 * m, piece.height + uy + m)
+            placed = [Placement(item, m, uy, False)]
+            rest = remaining[1:]
+
+        pages.append(Page(size, placed))
+        remaining = rest
+
+    return pages
 
 
 # ============================================================
-# PDF GENERATION
+# WHAT TO PRINT
 # ============================================================
 
-def generate_pdf(file_name, figures):
-    """
-    A PDF with one page per figure, each page as large
-    as the figure itself.
-    """
+def _labels(cfg, piece, wall_index, house, show_house):
+    """Corner letters for the two side tabs of a wall, or None."""
+    if not cfg.joint_labels or (piece.role, wall_index) not in JOINTS:
+        return None
 
-    c = canvas.Canvas(file_name)
+    def text(letter_):
+        return f"{house + 1}{letter_}" if show_house else letter_
 
-    for name, w, h, draw, _ in figures:
-        c.setPageSize((w, h))
-        draw(c)
+    left, right = JOINTS[(piece.role, wall_index)]
+    return text(left), text(right)
+
+
+def _make_item(cfg, piece, copy_index, show_house):
+    """Item number `copy_index` of a piece: copies of a wall come in
+    pairs (the two walls of the same kind of one house)."""
+    wall_index = copy_index % piece.per_house
+    house = copy_index // piece.per_house
+
+    if piece.has_door and cfg.one_door_per_house:
+        door_present = wall_index == 0
+    else:
+        door_present = True
+
+    return Item(piece, door_present,
+                _labels(cfg, piece, wall_index, house, show_house))
+
+
+MAX_FILL = 60
+
+
+def max_copies(cfg, piece):
+    """How many copies of a piece fit on one page."""
+    base = PAPER_SIZES[cfg.paper]
+    probe = [Item(piece)] * MAX_FILL
+    best = max(len(pack_one_page(cfg, probe, size)[0])
+               for size in (landscape(base), base))
+
+    # A house needs the walls in pairs: do not leave a lone wall
+    if piece.per_house == 2 and best >= 2 and best % 2:
+        best -= 1
+    return best
+
+
+def plan_pages(cfg, pieces):
+    """Lays out the complete PDF. Returns a list of Page."""
+
+    if cfg.houses is None:
+        # Every page is filled with copies of one piece
+        pages = []
+        for piece in pieces:
+            count = max_copies(cfg, piece)
+            items = [_make_item(cfg, piece, k, show_house=False)
+                     for k in range(count)]
+            pages += pack_pages(cfg, items)
+        return pages
+
+    # Exactly the pieces needed for the requested number of houses
+    show_house = cfg.houses > 1
+    items = []
+    for house in range(cfg.houses):
+        for piece in pieces:
+            for wall_index in range(piece.per_house):
+                items.append(_make_item(
+                    cfg, piece, house * piece.per_house + wall_index,
+                    show_house))
+
+    if cfg.mix_pieces:
+        return pack_pages(cfg, items)
+
+    pages = []
+    for piece in pieces:
+        pages += pack_pages(cfg, [it for it in items if it.piece is piece])
+    return pages
+
+
+# ============================================================
+# PDF OUTPUT
+# ============================================================
+
+class OutputError(Exception):
+    """A PDF could not be written."""
+
+
+def save_pdf(c, path):
+    try:
+        c.save()
+    except PermissionError:
+        raise OutputError(
+            f"Cannot write {path}. If it is open in a PDF viewer, close "
+            f"it and run the script again.") from None
+
+
+class FormCache:
+    """Draws the body of a piece (texture, door, windows) once per PDF
+    as a reusable form, instead of once per copy."""
+
+    def __init__(self, c):
+        self.c = c
+        self.names = {}
+
+    def get(self, piece, door):
+        key = (piece.name, door if piece.has_door else True)
+        if key not in self.names:
+            name = f"piece{len(self.names)}"
+            self.c.beginForm(name, -2, -2, piece.width + 2, piece.height + 2)
+            piece.body(self.c, key[1])
+            self.c.endForm()
+            self.names[key] = name
+        return self.names[key]
+
+
+def draw_item(cfg, c, item, forms):
+    piece = item.piece
+
+    if forms is not None and cfg.textures_enabled:
+        c.saveState()
+        c.setDash()
+        c.setLineWidth(1)
+        c.doForm(forms.get(piece, item.door))
+        c.restoreState()
+    else:
+        piece.body(c, item.door)
+
+    piece.outline(c, item.labels)
+
+
+def draw_ruler(cfg, c):
+    """5 cm ruler in the bottom-left corner, to check the print scale."""
+    m = cfg.page_margin_cm * cm
+    y = m + 0.30 * cm
+
+    c.saveState()
+    c.setStrokeColorRGB(0, 0, 0)
+    c.setFillColorRGB(0, 0, 0)
+    c.setLineWidth(0.5)
+    c.setDash()
+
+    c.line(m, y, m + 5 * cm, y)
+    for i in range(6):
+        tick = 0.30 * cm if i in (0, 5) else 0.15 * cm
+        c.line(m + i * cm, y, m + i * cm, y + tick)
+
+    c.setFont("Helvetica", 6.5)
+    c.drawString(m + 5 * cm + 0.25 * cm, y - 0.04 * cm,
+                 "5 cm: print at 100 percent (actual size)")
+    c.restoreState()
+
+
+def write_single_pdf(cfg, path, pieces):
+    """A PDF with one page per piece, each page as large as the piece."""
+    c = canvas.Canvas(str(path), invariant=1)
+
+    for piece in pieces:
+        c.setPageSize((piece.width, piece.height))
+        draw_item(cfg, c, Item(piece), None)
         c.showPage()
 
-    c.save()
+    save_pdf(c, path)
 
-    if len(figures) == 1:
-        w, h = figures[0][1], figures[0][2]
-        print(f"PDF created: {file_name} ({w / cm:.2f} × {h / cm:.2f} cm)")
+    if len(pieces) == 1:
+        p = pieces[0]
+        print(f"PDF created: {path} "
+              f"({p.width / cm:.2f} × {p.height / cm:.2f} cm)")
     else:
-        print(f"PDF created: {file_name} ({len(figures)} pages)")
-        for i, (name, w, h, _, _) in enumerate(figures, start=1):
-            print(f"    page {i}: {name} ({w / cm:.2f} × {h / cm:.2f} cm)")
+        print(f"PDF created: {path} ({len(pieces)} pages)")
 
 
-def generate_a4_pdf(file_name, figures):
-    """
-    A PDF with one A4 page per figure, with 1, 2 or 4 copies
-    of the figure (depending on how many fit).
-    If HALVE_DOORS_ON_COPIES is on, for the wall with the door
-    only half of the copies get the door.
-    """
+def write_complete_pdf(cfg, path, pages):
+    """The complete PDF: pages of paper with several pieces on each."""
+    c = canvas.Canvas(str(path), invariant=1)
+    forms = FormCache(c) if cfg.reuse_textures else None
 
-    c = canvas.Canvas(file_name)
+    print(f"PDF created: {path} ({len(pages)} {cfg.paper} pages)")
 
-    g = COPY_GAP_CM * cm
+    for number, page in enumerate(pages, start=1):
+        pw, ph = page.size
+        c.setPageSize(page.size)
 
-    print(f"PDF created: {file_name} ({len(figures)} A4 pages)")
+        for p in page.placements:
+            c.saveState()
+            if p.rotated:
+                # Rotated by 90 degrees: it occupies x..x+height, y..y+width
+                c.translate(p.x + p.item.piece.height, p.y)
+                c.rotate(90)
+            else:
+                c.translate(p.x, p.y)
+            draw_item(cfg, c, p.item, forms)
+            c.restoreState()
 
-    for i, (name, w, h, draw, has_door) in enumerate(figures, start=1):
+        if cfg.calibration_ruler:
+            draw_ruler(cfg, c)
 
-        (page_w, page_h), orientation, columns, rows = \
-            choose_orientation(w, h)
+        c.showPage()
 
-        if columns == 0:
-            print(f"    page {i}: {name} does NOT fit on an A4 "
-                  f"({w / cm:.2f} × {h / cm:.2f} cm), placing it alone")
-            columns, rows = 1, 1
+        print(f"    page {number}: {describe_page(cfg, page)}")
 
-        copies = columns * rows
+    save_pdf(c, path)
 
-        # How many copies get the door
-        if has_door and HALVE_DOORS_ON_COPIES and copies > 1:
-            with_door = copies // 2
+
+def describe_page(cfg, page):
+    counts = {}
+    doors = 0
+    for p in page.placements:
+        counts[p.item.piece.name] = counts.get(p.item.piece.name, 0) + 1
+        if p.item.piece.has_door and p.item.door:
+            doors += 1
+
+    pw, ph = page.size
+    orientation = "landscape" if pw > ph else "portrait"
+    parts = ", ".join(f"{n} × {name}" for name, n in counts.items())
+    rotated = sum(p.rotated for p in page.placements)
+
+    text = f"{cfg.paper} {orientation}: {parts}"
+    if doors:
+        text += f" ({doors} with door)"
+    if rotated:
+        text += f", {rotated} rotated"
+    return text
+
+
+def generate_house(cfg, out_dir, prefix, wall_material, roof_material):
+    """Writes the 4 PDFs of a house with the given materials."""
+    short_wall, long_wall, roof = make_pieces(cfg, wall_material,
+                                              roof_material)
+
+    paths = []
+    for piece, suffix in ((short_wall, "short_wall"),
+                          (long_wall, "long_wall"),
+                          (roof, "roof")):
+        path = out_dir / f"{prefix}_{suffix}.pdf"
+        write_single_pdf(cfg, path, [piece])
+        paths.append(path)
+
+    path = out_dir / f"{prefix}_complete.pdf"
+    write_complete_pdf(cfg, path, plan_pages(cfg, [short_wall, long_wall, roof]))
+    paths.append(path)
+
+    return paths, roof
+
+
+def resolve_output_dir(cfg):
+    path = Path(cfg.output_dir)
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent / path
+    return path
+
+
+def run(cfg):
+    """Generates everything described by the configuration.
+    Returns the list of PDFs written."""
+    validate(cfg)
+
+    print()
+    for warning in check_dimensions(cfg):
+        print(warning)
+
+    out_dir = resolve_output_dir(cfg)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    files = []
+
+    if cfg.generate_full_house:
+
+        if cfg.generate_all_variants and cfg.textures_enabled:
+            for wall in WALL_PALETTES:
+                for roof_mat in ROOF_PALETTES:
+                    print(f"--- walls: {wall}, roof: {roof_mat} ---")
+                    paths, roof = generate_house(
+                        cfg, out_dir, f"{cfg.base_name}_{wall}_{roof_mat}",
+                        wall, roof_mat)
+                    files += paths
+                    print()
         else:
-            with_door = copies
+            paths, roof = generate_house(cfg, out_dir, cfg.base_name,
+                                         cfg.wall_material, cfg.roof_material)
+            files += paths
 
-        c.setPageSize((page_w, page_h))
+        side = slope_side_cm(cfg, cfg.width_cm)
+        slope = side + cfg.roof_overhang_cm
 
-        # Block of copies centred on the page
-        block_w = columns * w + (columns - 1) * g
-        block_h = rows * h + (rows - 1) * g
+        print()
+        print("Roof:")
+        print(f"  triangle side = {side:.2f} cm")
+        print(f"  base depth of each slope = {slope:.2f} cm")
+        print(f"  base size = {cfg.length_cm:.2f} × {2 * slope:.2f} cm")
+        print(f"  final sheet (+{cfg.roof_margin_cm} cm per side) = "
+              f"{roof.width / cm:.2f} × {roof.height / cm:.2f} cm")
+        print()
+        print(f"Door on the {cfg.door_on} side")
 
-        x0 = (page_w - block_w) / 2
-        y_top = (page_h + block_h) / 2
-
-        index = 0
-        for row in range(rows):
-            for column in range(columns):
-                x = x0 + column * (w + g)
-                y = y_top - (row + 1) * h - row * g
-
-                c.saveState()
-                c.translate(x, y)
-                draw(c, index < with_door)
-                c.restoreState()
-
-                index += 1
-
-        c.showPage()
-
-        detail = f", {with_door} with door" if has_door else ""
-        noun = "copy" if copies == 1 else "copies"
-        print(f"    page {i}: {name} - {copies} {noun} "
-              f"({columns} × {rows}), A4 {orientation}{detail}")
-
-    c.save()
-
-
-def generate_house(prefix, wall_material, roof_material):
-    """Generates the 4 PDFs of a house with the given materials."""
-
-    short_wall = wall_figure("short wall", WIDTH_CM, HEIGHT_CM,
-                             True, DOOR_ON == "short", wall_material)
-    long_wall = wall_figure("long wall", LENGTH_CM, HEIGHT_CM,
-                            False, DOOR_ON == "long", wall_material)
-    roof = roof_figure("roof", roof_material)
-
-    # 1-3) Separate PDFs, each as large as its figure
-    generate_pdf(f"{prefix}_short_wall.pdf", [short_wall])
-    generate_pdf(f"{prefix}_long_wall.pdf", [long_wall])
-    generate_pdf(f"{prefix}_roof.pdf", [roof])
-
-    # 4) Complete PDF: A4 pages with several copies
-    generate_a4_pdf(
-        f"{prefix}_complete.pdf",
-        [short_wall, long_wall, roof]
-    )
-
-    return roof
-
-
-# ============================================================
-# GENERATION
-# ============================================================
-
-print()
-
-if DOOR_ON not in ("short", "long"):
-    raise ValueError('DOOR_ON must be "short" or "long"')
-
-check_dimensions()
-
-if GENERATE_FULL_HOUSE:
-
-    if GENERATE_ALL_VARIANTS and TEXTURES_ENABLED:
-        for wall in WALLS:
-            for roof_mat in ROOFS:
-                print(f"--- walls: {wall}, roof: {roof_mat} ---")
-                roof = generate_house(f"{BASE_NAME}_{wall}_{roof_mat}",
-                                      wall, roof_mat)
-                print()
     else:
-        roof = generate_house(BASE_NAME, WALL_MATERIAL, ROOF_MATERIAL)
-
-    side = slope_side_cm(WIDTH_CM)
-    slope = side + ROOF_OVERHANG_CM
-
-    print()
-    print("Roof:")
-    print(f"  triangle side = {side:.2f} cm")
-    print(f"  base depth of each slope = {slope:.2f} cm")
-    print(f"  base size = "
-          f"{LENGTH_CM:.2f} × {2 * slope:.2f} cm")
-    print(f"  final sheet (+{ROOF_MARGIN_CM} cm per side) = "
-          f"{roof[1] / cm:.2f} × {roof[2] / cm:.2f} cm")
+        piece = wall_piece(cfg, "wall", "wall", cfg.width_cm, cfg.height_cm,
+                           cfg.use_roof, True, cfg.wall_material,
+                           seed_id=4, per_house=1)
+        path = out_dir / f"{cfg.base_name}.pdf"
+        write_single_pdf(cfg, path, [piece])
+        files.append(path)
 
     print()
-    print(f"Door on the {DOOR_ON} side")
+    print("Inner rectangle (game squares):")
+    print(f"  {cfg.width_cm} × {cfg.height_cm} cm")
+    print()
+    print("Outer rectangle (with tabs):")
+    print(f"  {cfg.width_cm + 2 * cfg.tab_width_cm} × "
+          f"{cfg.height_cm + 2 * cfg.tab_width_cm} cm")
 
-else:
+    return files
 
-    figure = wall_figure("wall", WIDTH_CM, HEIGHT_CM,
-                         USE_ROOF, True, WALL_MATERIAL)
-    generate_pdf(f"{BASE_NAME}.pdf", [figure])
 
-print()
-print("Inner rectangle (game squares):")
-print(f"  {WIDTH_CM} × {HEIGHT_CM} cm")
-print()
-print("Outer rectangle (with tabs):")
-print(f"  {WIDTH_CM + 2 * TAB_WIDTH_CM} × {HEIGHT_CM + 2 * TAB_WIDTH_CM} cm")
+# ============================================================
+# COMMAND LINE
+# ============================================================
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        description="Procedural, printable paper houses for tabletop RPGs. "
+                    "Every setting of the Config class can be overridden "
+                    "here; without options the defaults of the file are used.")
+
+    for f in fields(Config):
+        if not f.metadata.get("cli", True):
+            continue
+
+        flag = "--" + f.name.replace("_", "-")
+        help_text = f"{f.metadata.get('help', '')} (default: {f.default})"
+
+        if isinstance(f.default, bool):
+            parser.add_argument(flag, action=argparse.BooleanOptionalAction,
+                                default=None, help=help_text)
+        else:
+            choices = f.metadata.get("choices")
+            if callable(choices):
+                choices = choices()
+            parser.add_argument(flag, dest=f.name, default=None,
+                                type=f.metadata.get("type") or type(f.default),
+                                choices=choices, help=help_text)
+
+    return parser
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    overrides = {k: v for k, v in vars(args).items() if v is not None}
+    cfg = Config(**overrides)
+
+    try:
+        run(cfg)
+    except ValueError as error:
+        print(f"Invalid settings:\n{error}", file=sys.stderr)
+        return 2
+    except OutputError as error:
+        print(error, file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

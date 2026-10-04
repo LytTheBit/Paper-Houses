@@ -1,0 +1,264 @@
+"""Tests for main.py. Run with:  python -m unittest -v"""
+
+import math
+import tempfile
+import unittest
+from collections import Counter
+from dataclasses import replace
+from pathlib import Path
+from unittest import mock
+
+from reportlab.lib.units import cm
+from reportlab.pdfgen import canvas
+
+import main
+from main import Config
+
+
+def make_cfg(tmp, **overrides):
+    return Config(output_dir=tmp, **overrides)
+
+
+class GeometryTests(unittest.TestCase):
+
+    def test_outward_parallel_keeps_direction_and_distance(self):
+        x1, y1, x2, y2 = 0, 0, 3, 4
+        px1, py1, px2, py2 = main.outward_parallel(x1, y1, x2, y2, 2)
+        # Same direction and length
+        self.assertAlmostEqual(px2 - px1, x2 - x1)
+        self.assertAlmostEqual(py2 - py1, y2 - y1)
+        # Shifted by exactly 2, perpendicular to the segment
+        shift = (px1 - x1, py1 - y1)
+        self.assertAlmostEqual(math.hypot(*shift), 2)
+        self.assertAlmostEqual(shift[0] * (x2 - x1) + shift[1] * (y2 - y1), 0)
+
+    def test_slope_side(self):
+        cfg = Config(roof_height_cm=4)
+        self.assertAlmostEqual(main.slope_side_cm(cfg, 6), 5)   # 3-4-5
+
+    def test_meters_conversion(self):
+        cfg = Config()
+        self.assertAlmostEqual(main.meters(cfg, 1.5), 2.5 * cm)
+
+
+class PackingTests(unittest.TestCase):
+
+    def overlap(self, a, b):
+        ax, ay, aw, ah = a
+        bx, by, bw, bh = b
+        return not (ax + aw <= bx + 1e-6 or bx + bw <= ax + 1e-6
+                    or ay + ah <= by + 1e-6 or by + bh <= ay + 1e-6)
+
+    def test_no_overlaps_and_inside_bounds(self):
+        sizes = [(40, 30), (25, 25), (60, 20), (15, 50), (30, 30)] * 3
+        placed = main.maxrects_pack(sizes, 10, 10, 200, 150)
+        rects = []
+        for i, (x, y, rotated) in placed.items():
+            w, h = sizes[i]
+            if rotated:
+                w, h = h, w
+            self.assertGreaterEqual(x, 10 - 1e-6)
+            self.assertGreaterEqual(y, 10 - 1e-6)
+            self.assertLessEqual(x + w, 210 + 1e-6)
+            self.assertLessEqual(y + h, 160 + 1e-6)
+            rects.append((x, y, w, h))
+        for i in range(len(rects)):
+            for j in range(i + 1, len(rects)):
+                self.assertFalse(self.overlap(rects[i], rects[j]))
+
+    def test_rotation_lets_a_piece_fit(self):
+        # 100 x 40 piece in a 50 x 120 area only fits rotated
+        self.assertEqual(main.maxrects_pack([(100, 40)], 0, 0, 50, 120, True)[0][2],
+                         True)
+        self.assertEqual(main.maxrects_pack([(100, 40)], 0, 0, 50, 120, False), {})
+
+    def test_pieces_that_do_not_fit_are_left_out(self):
+        placed = main.maxrects_pack([(30, 30)] * 10, 0, 0, 70, 70)
+        self.assertEqual(len(placed), 4)
+
+
+class PlanningTests(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def pieces(self, cfg):
+        return main.make_pieces(cfg, cfg.wall_material, cfg.roof_material)
+
+    def all_items(self, pages):
+        return [p.item for page in pages for p in page.placements]
+
+    def test_one_door_per_house(self):
+        for houses in (1, 2, 3):
+            cfg = make_cfg(self.tmp, houses=houses, mix_pieces=True)
+            items = self.all_items(main.plan_pages(cfg, self.pieces(cfg)))
+            door_walls = [i for i in items if i.piece.has_door]
+            self.assertEqual(len(door_walls), 2 * houses)
+            self.assertEqual(sum(i.door for i in door_walls), houses)
+
+    def test_every_door_when_option_is_off(self):
+        cfg = make_cfg(self.tmp, houses=2, one_door_per_house=False)
+        items = self.all_items(main.plan_pages(cfg, self.pieces(cfg)))
+        self.assertTrue(all(i.door for i in items if i.piece.has_door))
+
+    def test_pieces_per_house(self):
+        cfg = make_cfg(self.tmp, houses=3, mix_pieces=True)
+        items = self.all_items(main.plan_pages(cfg, self.pieces(cfg)))
+        counts = Counter(i.piece.name for i in items)
+        self.assertEqual(counts, {"short wall": 6, "long wall": 6, "roof": 3})
+
+    def test_joint_letters_come_in_pairs_per_house(self):
+        cfg = make_cfg(self.tmp, houses=2, mix_pieces=True)
+        items = self.all_items(main.plan_pages(cfg, self.pieces(cfg)))
+        letters = Counter(text for i in items if i.labels for text in i.labels)
+        self.assertEqual(len(letters), 8)           # 4 letters x 2 houses
+        self.assertTrue(all(n == 2 for n in letters.values()))
+        self.assertIn("1A", letters)
+        self.assertIn("2D", letters)
+
+    def test_single_house_has_plain_letters(self):
+        cfg = make_cfg(self.tmp, houses=1)
+        items = self.all_items(main.plan_pages(cfg, self.pieces(cfg)))
+        letters = {text for i in items if i.labels for text in i.labels}
+        self.assertEqual(letters, {"A", "B", "C", "D"})
+
+    def test_labels_can_be_turned_off(self):
+        cfg = make_cfg(self.tmp, houses=1, joint_labels=False)
+        items = self.all_items(main.plan_pages(cfg, self.pieces(cfg)))
+        self.assertTrue(all(i.labels is None for i in items))
+
+    def test_fill_mode_uses_whole_pairs_of_walls(self):
+        cfg = make_cfg(self.tmp)
+        for piece in self.pieces(cfg):
+            if piece.per_house == 2:
+                self.assertEqual(main.max_copies(cfg, piece) % 2, 0)
+
+    def test_pieces_stay_inside_the_page(self):
+        cfg = make_cfg(self.tmp, houses=3, mix_pieces=True, paper="Letter")
+        for page in main.plan_pages(cfg, self.pieces(cfg)):
+            pw, ph = page.size
+            for p in page.placements:
+                w, h = p.item.piece.width, p.item.piece.height
+                if p.rotated:
+                    w, h = h, w
+                self.assertGreaterEqual(p.x, -1e-6)
+                self.assertGreaterEqual(p.y, -1e-6)
+                self.assertLessEqual(p.x + w, pw + 1e-6)
+                self.assertLessEqual(p.y + h, ph + 1e-6)
+
+    def test_oversized_piece_gets_its_own_page(self):
+        cfg = make_cfg(self.tmp, width_cm=50, length_cm=60, houses=1)
+        pages = main.plan_pages(cfg, self.pieces(cfg))
+        self.assertEqual(len(self.all_items(pages)), 5)
+
+
+class ColourTests(unittest.TestCase):
+
+    def test_marker_stays_red_on_white(self):
+        red = (0.85, 0.10, 0.10)
+        self.assertEqual(main.readable_on((1, 1, 1), red), red)
+
+    def test_marker_changes_on_red_brick(self):
+        red = (0.85, 0.10, 0.10)
+        brick = main.WALL_PALETTES["brick"]["base"]
+        self.assertNotEqual(main.readable_on(brick, red), red)
+
+    def test_contrast_ratio_extremes(self):
+        self.assertAlmostEqual(main.contrast_ratio((0, 0, 0), (1, 1, 1)), 21)
+
+
+class ValidationTests(unittest.TestCase):
+
+    def test_bad_material_lists_the_options(self):
+        with self.assertRaises(ValueError) as error:
+            main.validate(Config(wall_material="marble"))
+        self.assertIn("brick", str(error.exception))
+
+    def test_bad_values(self):
+        for bad in (Config(door_on="top"), Config(paper="A3"),
+                    Config(houses=0), Config(width_cm=-1)):
+            with self.assertRaises(ValueError):
+                main.validate(bad)
+
+    def test_defaults_are_valid(self):
+        main.validate(Config())
+
+    def test_dimension_warning(self):
+        self.assertEqual(main.check_dimensions(Config()), [])
+        warnings = main.check_dimensions(Config(width_cm=7))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("width_cm", warnings[0])
+
+
+class OutputTests(unittest.TestCase):
+
+    def run_quiet(self, cfg):
+        with mock.patch("builtins.print"):
+            return main.run(cfg)
+
+    def test_whole_house_writes_four_pdfs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            files = self.run_quiet(make_cfg(tmp))
+            self.assertEqual(
+                sorted(f.name for f in files),
+                ["house_DnD_complete.pdf", "house_DnD_long_wall.pdf",
+                 "house_DnD_roof.pdf", "house_DnD_short_wall.pdf"])
+            for f in files:
+                self.assertTrue(f.read_bytes().startswith(b"%PDF"))
+
+    def test_same_settings_give_identical_files(self):
+        with tempfile.TemporaryDirectory() as a, \
+                tempfile.TemporaryDirectory() as b:
+            kwargs = dict(textures_enabled=True, wall_material="stone",
+                          roof_material="thatch", houses=2)
+            for tmp in (a, b):
+                self.run_quiet(make_cfg(tmp, **kwargs))
+            for name in ("house_DnD_complete.pdf", "house_DnD_roof.pdf"):
+                self.assertEqual((Path(a) / name).read_bytes(),
+                                 (Path(b) / name).read_bytes())
+
+    def test_reusing_textures_makes_the_file_smaller(self):
+        with tempfile.TemporaryDirectory() as a, \
+                tempfile.TemporaryDirectory() as b:
+            kwargs = dict(textures_enabled=True, wall_material="brick",
+                          roof_material="tiles", houses=2)
+            self.run_quiet(make_cfg(a, reuse_textures=True, **kwargs))
+            self.run_quiet(make_cfg(b, reuse_textures=False, **kwargs))
+            small = (Path(a) / "house_DnD_complete.pdf").stat().st_size
+            big = (Path(b) / "house_DnD_complete.pdf").stat().st_size
+            self.assertLess(small, big)
+
+    def test_single_wall_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            files = self.run_quiet(make_cfg(tmp, generate_full_house=False))
+            self.assertEqual([f.name for f in files], ["house_DnD.pdf"])
+
+    def test_all_variants(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            files = self.run_quiet(make_cfg(
+                tmp, textures_enabled=True, generate_all_variants=True))
+            self.assertEqual(len(files), 9 * 4)
+
+    def test_locked_file_gives_a_clear_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(canvas.Canvas, "save",
+                                   side_effect=PermissionError):
+                with self.assertRaises(main.OutputError) as error:
+                    self.run_quiet(make_cfg(tmp))
+            self.assertIn("close", str(error.exception).lower())
+
+    def test_command_line_overrides(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch("builtins.print"):
+            code = main.main(["--output-dir", tmp, "--houses", "2",
+                              "--paper", "Letter", "--no-calibration-ruler"])
+            self.assertEqual(code, 0)
+
+    def test_command_line_reports_invalid_settings(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch("builtins.print"):
+            self.assertEqual(main.main(["--output-dir", tmp, "--houses", "0"]), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

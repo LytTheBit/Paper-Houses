@@ -1,0 +1,10 @@
+# Generated PDFs
+output/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# PyCharm
+.idea/
