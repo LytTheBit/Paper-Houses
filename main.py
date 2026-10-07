@@ -27,11 +27,12 @@ from reportlab.pdfgen import canvas
 # SETTINGS
 # ============================================================
 
-def _f(default, help="", choices=None, cli=True, type=None):
-    """Declares a setting: default value, help text, and how the
-    command line should treat it."""
+def _f(default, help="", choices=None, cli=True, type=None, group="House"):
+    """Declares a setting: default value, help text, how the command line
+    should treat it, and the tab of the window it appears in."""
     return field(default=default, metadata={
-        "help": help, "choices": choices, "cli": cli, "type": type})
+        "help": help, "choices": choices, "cli": cli, "type": type,
+        "group": group})
 
 
 @dataclass
@@ -40,7 +41,7 @@ class Config:
     # rectangle (the D&D squares, multiples of 2.5 cm).
     # The tabs (tab_width_cm) are added on the outside.
 
-    # --- What to generate ---
+    # --- House: sizes ---
     generate_full_house: bool = _f(
         True, "generate the whole house (4 PDFs) instead of a single wall")
     width_cm: float = _f(7.5, "short side of the house (the one with the gable)")
@@ -54,11 +55,30 @@ class Config:
     roof_margin_cm: float = _f(
         1.0, "extra margin added on every side of the roof sheet")
     use_roof: bool = _f(True, "single-wall mode only: draw the roof gable")
-    draw_roof_base: bool = _f(
-        False, "also draw the base of the gable triangle (fold line)")
 
-    # --- Lines ---
-    line_width: float = _f(0.5, "line width in points")
+    # --- Look: lines and textures ---
+    textures_enabled: bool = _f(
+        False, "paint textures (otherwise only lines)", group="Look")
+    wall_material: str = _f(
+        "wood", "wall material", choices=lambda: list(WALL_PALETTES),
+        group="Look")
+    roof_material: str = _f(
+        "thatch", "roof material", choices=lambda: list(ROOF_PALETTES),
+        group="Look")
+    generate_all_variants: bool = _f(
+        False, "generate every wall/roof material combination", group="Look")
+    seed: int = _f(
+        7, "different seed, different variation of the textures", group="Look")
+    texture_on_roof_overhang: bool = _f(
+        True, "texture also covers the extra margin of the roof sheet",
+        group="Look")
+    reuse_textures: bool = _f(
+        True, "draw each texture once per PDF and reuse it for every copy "
+              "(smaller, faster files)", group="Look")
+    line_width: float = _f(0.5, "line width in points", group="Look")
+    draw_roof_base: bool = _f(
+        False, "also draw the base of the gable triangle (fold line)",
+        group="Look")
     line_color: tuple = _f((0, 0, 0), "colour of fold/cut lines", cli=False)
     dash: tuple = _f((3, 3), "dash pattern (dash, gap) in points", cli=False)
     marker_color: tuple = _f(
@@ -67,67 +87,65 @@ class Config:
         "(black or white is used instead when it would be hard to see)",
         cli=False)
 
-    # --- Textures ---
-    textures_enabled: bool = _f(False, "paint textures (otherwise only lines)")
-    wall_material: str = _f(
-        "wood", "wall material", choices=lambda: list(WALL_PALETTES))
-    roof_material: str = _f(
-        "thatch", "roof material", choices=lambda: list(ROOF_PALETTES))
-    generate_all_variants: bool = _f(
-        False, "generate every wall/roof material combination")
-    seed: int = _f(7, "different seed, different variation of the textures")
-    texture_on_roof_overhang: bool = _f(
-        True, "texture also covers the extra margin of the roof sheet")
-    reuse_textures: bool = _f(
-        True, "draw each texture once per PDF and reuse it for every copy "
-              "(smaller, faster files)")
-
     # --- Door and windows ---
-    door_and_windows: bool = _f(True, "draw door and windows")
+    door_and_windows: bool = _f(
+        True, "draw door and windows", group="Door & windows")
     door_on: str = _f("short", "side of the house with the door",
-                      choices=["short", "long"])
-    cell_cm: float = _f(2.5, "side of a game square")
-    meters_per_cell: float = _f(1.5, "size of a game square in the fiction")
-    door_width_min_m: float = _f(1.0, "door width on a 3-square wall")
-    door_width_max_m: float = _f(1.5, "door width on a 5-square wall or more")
-    door_height_m: float = _f(2.0, "door height")
-    door_arched: bool = _f(True, "door with a rounded top")
+                      choices=["short", "long"], group="Door & windows")
+    one_door_per_house: bool = _f(
+        True, "only one wall per house gets the door (the other gets a "
+              "window in its place)", group="Door & windows")
+    door_arched: bool = _f(
+        True, "door with a rounded top", group="Door & windows")
+    door_width_min_m: float = _f(
+        1.0, "door width on a 3-square wall", group="Door & windows")
+    door_width_max_m: float = _f(
+        1.5, "door width on a 5-square wall or more", group="Door & windows")
+    door_height_m: float = _f(2.0, "door height", group="Door & windows")
+    window_width_m: float = _f(0.8, "window width", group="Door & windows")
+    window_height_m: float = _f(0.9, "window height", group="Door & windows")
+    window_sill_m: float = _f(
+        1.0, "height of the window sill above the ground", group="Door & windows")
+    round_window_radius_m: float = _f(
+        0.35, "radius of the small window in the gable", group="Door & windows")
     floor_height_cm: float = _f(
-        5.0, "one floor of windows for every this many cm of wall height")
+        5.0, "one floor of windows for every this many cm of wall height",
+        group="Door & windows")
     window_spacing_cells: float = _f(
         2.0, "target distance between windows, in game squares "
-             "(lower: more windows)")
-    window_width_m: float = _f(0.8, "window width")
-    window_height_m: float = _f(0.9, "window height")
-    window_sill_m: float = _f(1.0, "height of the window sill above the ground")
-    round_window_radius_m: float = _f(0.35, "radius of the small window in the gable")
+             "(lower: more windows)", group="Door & windows")
+    cell_cm: float = _f(
+        2.5, "side of a game square", group="Door & windows")
+    meters_per_cell: float = _f(
+        1.5, "size of a game square in the fiction", group="Door & windows")
 
-    # --- Complete PDF ---
+    # --- Pages and output ---
     paper: str = _f("A4", "paper size of the complete PDF",
-                    choices=lambda: list(PAPER_SIZES))
-    page_margin_cm: float = _f(0.5, "white margin along the edges of the page")
-    copy_gap_cm: float = _f(0.5, "gap between two pieces")
+                    choices=lambda: list(PAPER_SIZES), group="Pages & output")
     houses: Optional[int] = _f(
         None, "number of houses to print. Without it, every page is "
               "filled with as many copies of one piece as fit",
-        type=int)
+        type=int, group="Pages & output")
     mix_pieces: bool = _f(
-        False, "with --houses: pack different pieces on the same page "
-               "to save paper")
-    allow_rotation: bool = _f(True, "allow rotating pieces by 90 degrees")
-    one_door_per_house: bool = _f(
-        True, "only one wall per house gets the door (the other gets a "
-              "window in its place)")
+        False, "needs a number of houses: pack different pieces on the "
+               "same page to save paper", group="Pages & output")
+    allow_rotation: bool = _f(
+        True, "allow rotating pieces by 90 degrees", group="Pages & output")
     joint_labels: bool = _f(
         True, "write corner letters on the side tabs: tabs with the same "
-              "letter go together")
+              "letter go together", group="Pages & output")
     calibration_ruler: bool = _f(
         True, "draw a 5 cm ruler on every page of the complete PDF, to "
-              "check the print scale")
-
-    # --- Output ---
-    output_dir: str = _f("output", "folder for the PDFs (relative to this script)")
-    base_name: str = _f("house_DnD", "base name of the PDFs")
+              "check the print scale", group="Pages & output")
+    page_margin_cm: float = _f(
+        0.5, "white margin along the edges of the page", group="Pages & output")
+    copy_gap_cm: float = _f(
+        0.5, "gap between two pieces", group="Pages & output")
+    output_dir: str = _f(
+        "output", "folder for the PDFs (relative to this script)",
+        group="Pages & output")
+    base_name: str = _f(
+        "house_DnD", "base name of the PDFs", group="Pages & output")
 
 
 # ============================================================
@@ -241,6 +259,19 @@ def validate(cfg):
 
     if errors:
         raise ValueError("\n".join(errors))
+
+
+def check_settings(cfg):
+    """Returns a warning for every setting that has no effect because
+    of another one."""
+    warnings = []
+    if cfg.mix_pieces and cfg.houses is None:
+        warnings.append("WARNING: mix_pieces has no effect without houses "
+                        "(set the number of houses to mix the pieces).")
+    if cfg.generate_all_variants and not cfg.textures_enabled:
+        warnings.append("WARNING: generate_all_variants has no effect "
+                        "without textures.")
+    return warnings
 
 
 def check_dimensions(cfg):
@@ -1561,7 +1592,7 @@ def run(cfg):
     validate(cfg)
 
     print()
-    for warning in check_dimensions(cfg):
+    for warning in check_dimensions(cfg) + check_settings(cfg):
         print(warning)
 
     out_dir = resolve_output_dir(cfg)
@@ -1618,19 +1649,46 @@ def run(cfg):
 
 
 # ============================================================
-# COMMAND LINE
+# COMMAND LINE AND WINDOW
 # ============================================================
+
+def cli_fields():
+    """The settings that can be set from the command line / the window."""
+    return [f for f in fields(Config) if f.metadata.get("cli", True)]
+
+
+def config_to_args(cfg):
+    """The command-line options that reproduce `cfg`: only the ones that
+    differ from the defaults, as a list of strings."""
+    defaults = Config()
+    args = []
+    for f in cli_fields():
+        value = getattr(cfg, f.name)
+        if value == getattr(defaults, f.name) or value is None:
+            continue
+        flag = "--" + f.name.replace("_", "-")
+        if isinstance(value, bool):
+            args.append(flag if value else "--no-" + flag[2:])
+        else:
+            args += [flag, str(value)]
+    return args
+
 
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Procedural, printable paper houses for tabletop RPGs. "
-                    "Every setting of the Config class can be overridden "
-                    "here; without options the defaults of the file are used.")
+                    "Started with no options it opens a window to edit the "
+                    "settings. Every setting of the Config class can also "
+                    "be given here; whatever is not given keeps the default "
+                    "of the file.")
 
-    for f in fields(Config):
-        if not f.metadata.get("cli", True):
-            continue
+    parser.add_argument(
+        "--gui", action=argparse.BooleanOptionalAction, default=None,
+        help="open the window (the default when no option is given); with "
+             "other options, they fill the window in. --no-gui generates "
+             "straight away")
 
+    for f in cli_fields():
         flag = "--" + f.name.replace("_", "-")
         help_text = f"{f.metadata.get('help', '')} (default: {f.default})"
 
@@ -1648,11 +1706,39 @@ def build_parser():
     return parser
 
 
-def main(argv=None):
-    args = build_parser().parse_args(argv)
-    overrides = {k: v for k, v in vars(args).items() if v is not None}
-    cfg = Config(**overrides)
+def launch_window(overrides):
+    """Opens the window. Returns the exit code."""
+    try:
+        import gui
+    except ImportError as error:
+        print(f"The window needs tkinter, which is missing ({error}).\n"
+              f"Use the command-line options instead, "
+              f"for example: python main.py --help", file=sys.stderr)
+        return 1
 
+    try:
+        gui.launch(Config, run, validate, resolve_output_dir, config_to_args,
+                   overrides)
+    except gui.NoDisplayError as error:
+        print(f"Cannot open a window here ({error}).\n"
+              f"Use the command-line options instead, "
+              f"for example: python main.py --no-gui", file=sys.stderr)
+        return 1
+    return 0
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    args = build_parser().parse_args(argv)
+
+    use_window = args.gui if args.gui is not None else not argv
+    overrides = {k: v for k, v in vars(args).items()
+                 if v is not None and k != "gui"}
+
+    if use_window:
+        return launch_window(overrides)
+
+    cfg = Config(**overrides)
     try:
         run(cfg)
     except ValueError as error:

@@ -276,6 +276,80 @@ class FloorTests(unittest.TestCase):
             self.assertEqual(len(files), 4)
 
 
+class CommandLineTests(unittest.TestCase):
+
+    def test_defaults_need_no_options(self):
+        self.assertEqual(main.config_to_args(Config()), [])
+
+    def test_only_changed_settings_are_listed(self):
+        cfg = Config(houses=3, wall_material="stone", textures_enabled=True,
+                     one_door_per_house=False, width_cm=10.0)
+        args = main.config_to_args(cfg)
+        self.assertEqual(
+            args, ["--width-cm", "10.0", "--textures-enabled",
+                   "--wall-material", "stone", "--no-one-door-per-house",
+                   "--houses", "3"])
+
+    def test_the_command_rebuilds_the_same_settings(self):
+        cfg = Config(houses=2, mix_pieces=True, paper="Letter", height_cm=10.0,
+                     roof_material="tiles", calibration_ruler=False,
+                     base_name="my house")
+        parsed = main.build_parser().parse_args(main.config_to_args(cfg))
+        overrides = {k: v for k, v in vars(parsed).items()
+                     if v is not None and k != "gui"}
+        self.assertEqual(Config(**overrides), cfg)
+
+    def test_every_setting_belongs_to_a_tab(self):
+        for f in main.cli_fields():
+            self.assertTrue(f.metadata.get("group"), f.name)
+
+    def test_no_options_opens_the_window(self):
+        with mock.patch.object(main, "launch_window", return_value=0) as launch:
+            self.assertEqual(main.main([]), 0)
+        launch.assert_called_once_with({})
+
+    def test_options_fill_the_window_in_with_gui_flag(self):
+        with mock.patch.object(main, "launch_window", return_value=0) as launch:
+            main.main(["--gui", "--houses", "2", "--paper", "Letter"])
+        launch.assert_called_once_with({"houses": 2, "paper": "Letter"})
+
+    def test_options_alone_generate_without_a_window(self):
+        with mock.patch.object(main, "launch_window") as launch, \
+                tempfile.TemporaryDirectory() as tmp, \
+                mock.patch("builtins.print"):
+            self.assertEqual(main.main(["--output-dir", tmp]), 0)
+        launch.assert_not_called()
+
+    def test_no_gui_generates_with_the_defaults(self):
+        with mock.patch.object(main, "launch_window") as launch, \
+                mock.patch.object(main, "run") as run:
+            self.assertEqual(main.main(["--no-gui"]), 0)
+        launch.assert_not_called()
+        run.assert_called_once_with(Config())
+
+
+class SettingsWarningTests(unittest.TestCase):
+
+    def test_mixing_without_houses_is_reported(self):
+        warnings = main.check_settings(Config(mix_pieces=True))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("houses", warnings[0])
+        self.assertEqual(main.check_settings(Config(mix_pieces=True, houses=2)), [])
+
+    def test_all_variants_without_textures_is_reported(self):
+        self.assertEqual(len(main.check_settings(
+            Config(generate_all_variants=True))), 1)
+        self.assertEqual(main.check_settings(
+            Config(generate_all_variants=True, textures_enabled=True)), [])
+
+    def test_the_warning_is_printed_when_running(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch("builtins.print") as fake_print:
+            main.run(make_cfg(tmp, mix_pieces=True))
+        printed = " ".join(str(c.args[0]) for c in fake_print.call_args_list if c.args)
+        self.assertIn("mix_pieces has no effect", printed)
+
+
 class ColourTests(unittest.TestCase):
 
     def test_marker_stays_red_on_white(self):

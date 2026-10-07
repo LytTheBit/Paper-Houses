@@ -13,6 +13,7 @@ A single Python script draws the cutting and folding templates for a small house
   - Walls: brick, stone, wood (horizontal planks)
   - Roofs: wood shingles, clay tiles, thatch
   - Textures only cover the area inside the solid lines. Tabs get the flat base colour only, which makes cutting and gluing easier.
+- **A window to set everything**: run `python main.py` and a window opens, with a tab for each group of settings, a log, presets and a button that copies the equivalent command.
 - **Nothing to install**: run it from the Actions tab of the GitHub repository, fill a form and download the PDFs (see below).
 - **Door and windows scaled to the story world**: 2.5 cm = 1.5 m. Doors are 1 m to 1.5 m wide depending on the wall length, windows are 0.8 x 0.9 m. Arched plank door with frame, hinges and handle, framed windows with sills, round window in the gable. Windows are spread evenly along each wall, with one floor of windows for every 5 cm of wall height.
 - **Door on the short or the long side**, your choice.
@@ -96,6 +97,7 @@ Notes:
 
 - Python 3.10+
 - [ReportLab](https://pypi.org/project/reportlab/)
+- tkinter, only for the window. It comes with Python on Windows and macOS. On Linux: `sudo apt install python3-tk`.
 
 ```bash
 pip install -r requirements.txt
@@ -103,11 +105,28 @@ pip install -r requirements.txt
 
 ## Usage
 
+### The window
+
 ```bash
 python main.py
 ```
 
-Every setting can be changed in the `Config` class at the top of `main.py`, or overridden from the command line:
+Started with no options, the program opens a window:
+
+![The settings window](assets/gui.png)
+
+- One tab for each group of settings: **House** (sizes), **Look** (textures, lines), **Door & windows** and **Pages & output**. Move the mouse over a setting to read what it does.
+- Settings that do nothing in the current situation are greyed out. For example the materials when textures are off, or *Mix pieces* when the number of houses is empty.
+- **Generate PDFs** runs in the background and reports in the log at the bottom. **Open output folder** shows the result.
+- **Save preset...** and **Load preset...** keep a set of settings in a small `.json` file, handy for the house types you print often.
+- **Copy command** puts the equivalent command-line command in the clipboard, with only the settings that differ from the defaults. It is also a quick way to fill the form of the GitHub workflow.
+- Numbers accept the decimal comma: `7,5` works.
+
+The window needs a screen. On a server, or if tkinter is missing, the program says so and suggests the command line.
+
+### The command line
+
+Every setting can also be given as an option, and then no window opens:
 
 ```bash
 # Two textured brick houses with tiled roofs, pieces mixed on US Letter pages
@@ -117,9 +136,19 @@ python main.py --textures-enabled --wall-material brick --roof-material tiles \
 # Door on the long side, no calibration ruler
 python main.py --door-on long --no-calibration-ruler
 
+# Generate with the defaults of the file, without opening the window
+python main.py --no-gui
+
+# Open the window with some settings already filled in
+python main.py --gui --houses 3 --wall-material stone
+
 # All the options
 python main.py --help
 ```
+
+The defaults live in the `Config` class at the top of `main.py`. Options and window both start from them.
+
+### What you get
 
 By default the PDFs are written in an `output/` folder next to the script:
 
@@ -136,7 +165,7 @@ If a PDF cannot be written (`PermissionError` on Windows), the file is almost al
 
 ## Configuration
 
-The table lists the defaults currently set in `Config`. Each setting has a matching command-line option: the name with dashes, for example `wall_material` becomes `--wall-material`, and on/off settings accept `--name` and `--no-name`.
+The table lists the defaults currently set in `Config`. In the window they are grouped in the four tabs. Each setting has a matching command-line option: the name with dashes, for example `wall_material` becomes `--wall-material`, and on/off settings accept `--name` and `--no-name`.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -186,7 +215,7 @@ To add a material, write a texture function and register it with the `@wall_text
 python -m unittest -v
 ```
 
-The tests cover geometry, packing (no overlaps, pieces inside the page, rotation), one door per house, corner letters, colour contrast, validation, the command line, and that the same settings always produce identical PDFs.
+The tests cover geometry, packing, doors and windows, corner letters, colour contrast, validation, the command line, the generated PDFs, and the window (settings form, greying out, generation in the background, presets, copied command). The tests that open the window are skipped when there is no screen or no tkinter. On Linux you can give them a virtual screen with `xvfb-run python -m unittest`.
 
 ## Known limitations
 
@@ -200,3 +229,4 @@ The tests cover geometry, packing (no overlaps, pieces inside the page, rotation
 - More materials and window styles
 - Optional second storey for larger walls
 - Split `main.py` into modules (geometry, textures, openings, layout, command line)
+- Preview of the pages inside the window
