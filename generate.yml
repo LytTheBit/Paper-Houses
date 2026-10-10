@@ -1,0 +1,184 @@
+name: Generate paper houses
+
+# How to use it: open the "Actions" tab of the repository, pick
+# "Generate paper houses" on the left, press "Run workflow" and fill the form.
+# When the run is over, the PDFs are attached to it as a downloadable zip.
+
+on:
+  workflow_dispatch:
+    inputs:
+      houses:
+        description: "Number of houses (empty: fill every page with copies of one piece)"
+        type: string
+        default: "1"
+      textures:
+        description: "Paint textures (otherwise only the cutting lines)"
+        type: boolean
+        default: true
+      wall_material:
+        description: "Wall material"
+        type: choice
+        options: [brick, stone, wood]
+        default: brick
+      roof_material:
+        description: "Roof material"
+        type: choice
+        options: [tiles, wood, thatch]
+        default: tiles
+      all_variants:
+        description: "Every wall/roof combination (9 houses, needs textures)"
+        type: boolean
+        default: false
+      door_on:
+        description: "Side of the house with the door"
+        type: choice
+        options: [short, long]
+        default: short
+      paper:
+        description: "Paper size of the complete PDF"
+        type: choice
+        options: [A4, Letter]
+        default: A4
+      complete_only:
+        description: "Only the complete PDF (skip the PDFs of the single pieces)"
+        type: boolean
+        default: true
+      mix_pieces:
+        description: "Different pieces share the same pages (needs a number of houses)"
+        type: boolean
+        default: false
+      one_door_per_house:
+        description: "Only one wall per house gets the door"
+        type: boolean
+        default: true
+      joint_labels:
+        description: "Corner letters on the side tabs"
+        type: boolean
+        default: true
+      calibration_ruler:
+        description: "5 cm ruler on every page of the complete PDF"
+        type: boolean
+        default: true
+      width_cm:
+        description: "Short side, inner size in cm (multiple of 2.5)"
+        type: string
+        default: "7.5"
+      length_cm:
+        description: "Long side, inner size in cm (multiple of 2.5)"
+        type: string
+        default: "12.5"
+      height_cm:
+        description: "Wall height, inner size in cm (multiple of 2.5)"
+        type: string
+        default: "7.5"
+      roof_height_cm:
+        description: "Height of the roof gable in cm"
+        type: string
+        default: "5"
+      seed:
+        description: "Texture seed (another number, another variation)"
+        type: string
+        default: "7"
+      extra_options:
+        description: "Any other option, e.g. --no-door-and-windows --copy-gap-cm 0.3 (see README)"
+        type: string
+        default: ""
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install ReportLab
+        run: pip install -r requirements.txt
+
+      - name: Generate the PDFs
+        shell: bash
+        # The form values go through environment variables, never straight
+        # into the script, so they cannot be run as shell code.
+        env:
+          IN_HOUSES: ${{ inputs.houses }}
+          IN_TEXTURES: ${{ inputs.textures }}
+          IN_WALL: ${{ inputs.wall_material }}
+          IN_ROOF: ${{ inputs.roof_material }}
+          IN_ALL: ${{ inputs.all_variants }}
+          IN_DOOR_ON: ${{ inputs.door_on }}
+          IN_PAPER: ${{ inputs.paper }}
+          IN_COMPLETE: ${{ inputs.complete_only }}
+          IN_MIX: ${{ inputs.mix_pieces }}
+          IN_ONE_DOOR: ${{ inputs.one_door_per_house }}
+          IN_LABELS: ${{ inputs.joint_labels }}
+          IN_RULER: ${{ inputs.calibration_ruler }}
+          IN_WIDTH: ${{ inputs.width_cm }}
+          IN_LENGTH: ${{ inputs.length_cm }}
+          IN_HEIGHT: ${{ inputs.height_cm }}
+          IN_ROOF_HEIGHT: ${{ inputs.roof_height_cm }}
+          IN_SEED: ${{ inputs.seed }}
+          IN_EXTRA: ${{ inputs.extra_options }}
+        run: |
+          set -euo pipefail
+
+          # flag <option name> <true|false>  ->  --name  or  --no-name
+          flag() {
+            if [ "$2" = "true" ]; then echo "--$1"; else echo "--no-$1"; fi
+          }
+
+          args=(
+            --output-dir output
+            "$(flag textures-enabled "$IN_TEXTURES")"
+            --wall-material "$IN_WALL"
+            --roof-material "$IN_ROOF"
+            "$(flag generate-all-variants "$IN_ALL")"
+            --door-on "$IN_DOOR_ON"
+            --paper "$IN_PAPER"
+            "$(flag complete-only "$IN_COMPLETE")"
+            "$(flag mix-pieces "$IN_MIX")"
+            "$(flag one-door-per-house "$IN_ONE_DOOR")"
+            "$(flag joint-labels "$IN_LABELS")"
+            "$(flag calibration-ruler "$IN_RULER")"
+            --width-cm "$IN_WIDTH"
+            --length-cm "$IN_LENGTH"
+            --height-cm "$IN_HEIGHT"
+            --roof-height-cm "$IN_ROOF_HEIGHT"
+            --seed "$IN_SEED"
+          )
+
+          # Empty: fill every page. Otherwise print exactly N houses.
+          if [ -n "${IN_HOUSES// /}" ]; then
+            args+=(--houses "$IN_HOUSES")
+          fi
+
+          # Free-form extra options, split on spaces
+          if [ -n "${IN_EXTRA// /}" ]; then
+            read -r -a extra <<< "$IN_EXTRA"
+            args+=("${extra[@]}")
+          fi
+
+          python main.py "${args[@]}" 2>&1 | tee generate.log
+
+      - name: Show what was generated
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Paper Houses"
+            echo
+            echo '```'
+            cat generate.log 2>/dev/null || echo "Nothing was generated."
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attach the PDFs to the run
+        uses: actions/upload-artifact@v6
+        with:
+          name: paper-houses-${{ github.run_number }}
+          path: output/*.pdf
+          if-no-files-found: error
+          retention-days: 30

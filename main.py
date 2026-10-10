@@ -22,17 +22,21 @@ from reportlab.lib.pagesizes import A4, letter, landscape
 from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas
 
+from i18n import LANGUAGES, tr
+
 
 # ============================================================
 # SETTINGS
 # ============================================================
 
-def _f(default, help="", choices=None, cli=True, type=None, group="House"):
+def _f(default, help="", choices=None, cli=True, type=None, group="House",
+       gui=True):
     """Declares a setting: default value, help text, how the command line
-    should treat it, and the tab of the window it appears in."""
+    should treat it, the group it belongs to and whether the window shows
+    it among the settings."""
     return field(default=default, metadata={
         "help": help, "choices": choices, "cli": cli, "type": type,
-        "group": group})
+        "group": group, "gui": gui})
 
 
 @dataclass
@@ -120,6 +124,9 @@ class Config:
         1.5, "size of a game square in the fiction", group="Door & windows")
 
     # --- Pages and output ---
+    complete_only: bool = _f(
+        True, "write only the complete PDF, not the PDFs of the single "
+              "pieces", group="Pages & output")
     paper: str = _f("A4", "paper size of the complete PDF",
                     choices=lambda: list(PAPER_SIZES), group="Pages & output")
     houses: Optional[int] = _f(
@@ -146,6 +153,9 @@ class Config:
         group="Pages & output")
     base_name: str = _f(
         "house_DnD", "base name of the PDFs", group="Pages & output")
+    language: str = _f(
+        "en", "language of the messages and of the window",
+        choices=lambda: list(LANGUAGES), group="Pages & output", gui=False)
 
 
 # ============================================================
@@ -235,27 +245,34 @@ def polygon(c, points):
 
 def validate(cfg):
     """Raises ValueError with a readable message if a setting is wrong."""
+    def t(key, **values):
+        return tr(cfg.language, key, **values)
+
     errors = []
 
+    if cfg.language not in LANGUAGES:
+        errors.append(t("err.language", options=list(LANGUAGES),
+                        value=cfg.language))
     if cfg.wall_material not in WALL_PALETTES:
-        errors.append(f"wall_material must be one of {list(WALL_PALETTES)} "
-                      f"(got {cfg.wall_material!r})")
+        errors.append(t("err.wall_material", options=list(WALL_PALETTES),
+                        value=cfg.wall_material))
     if cfg.roof_material not in ROOF_PALETTES:
-        errors.append(f"roof_material must be one of {list(ROOF_PALETTES)} "
-                      f"(got {cfg.roof_material!r})")
+        errors.append(t("err.roof_material", options=list(ROOF_PALETTES),
+                        value=cfg.roof_material))
     if cfg.door_on not in ("short", "long"):
-        errors.append(f"door_on must be 'short' or 'long' (got {cfg.door_on!r})")
+        errors.append(t("err.door_on", value=cfg.door_on))
     if cfg.paper not in PAPER_SIZES:
-        errors.append(f"paper must be one of {list(PAPER_SIZES)} "
-                      f"(got {cfg.paper!r})")
+        errors.append(t("err.paper", options=list(PAPER_SIZES),
+                        value=cfg.paper))
     if cfg.houses is not None and cfg.houses < 1:
-        errors.append(f"houses must be at least 1 (got {cfg.houses})")
+        errors.append(t("err.houses", value=cfg.houses))
 
     for name in ("width_cm", "length_cm", "height_cm", "tab_width_cm",
-                 "roof_height_cm", "cell_cm", "meters_per_cell", "floor_height_cm",
-                 "window_spacing_cells"):
+                 "roof_height_cm", "cell_cm", "meters_per_cell",
+                 "floor_height_cm", "window_spacing_cells"):
         if getattr(cfg, name) <= 0:
-            errors.append(f"{name} must be positive (got {getattr(cfg, name)})")
+            errors.append(t("err.positive", name=name,
+                            value=getattr(cfg, name)))
 
     if errors:
         raise ValueError("\n".join(errors))
@@ -266,11 +283,9 @@ def check_settings(cfg):
     of another one."""
     warnings = []
     if cfg.mix_pieces and cfg.houses is None:
-        warnings.append("WARNING: mix_pieces has no effect without houses "
-                        "(set the number of houses to mix the pieces).")
+        warnings.append(tr(cfg.language, "msg.warn_mix"))
     if cfg.generate_all_variants and not cfg.textures_enabled:
-        warnings.append("WARNING: generate_all_variants has no effect "
-                        "without textures.")
+        warnings.append(tr(cfg.language, "msg.warn_variants"))
     return warnings
 
 
@@ -285,8 +300,9 @@ def check_dimensions(cfg):
     for name, value in dimensions:
         squares = value / cfg.cell_cm
         if abs(squares - round(squares)) > 1e-6:
-            warnings.append(f"WARNING: {name} = {value} cm is not a multiple "
-                            f"of {cfg.cell_cm} cm ({squares:.2f} squares).")
+            warnings.append(tr(cfg.language, "msg.warn_dimension",
+                               name=name, value=value, cell=cfg.cell_cm,
+                               squares=squares))
     return warnings
 
 
@@ -1319,10 +1335,10 @@ def pack_pages(cfg, items):
             # The piece is bigger than the paper: it gets a page of its own
             item = remaining[0]
             piece = item.piece
-            print(f"WARNING: {piece.name} "
-                  f"({piece.width / cm:.2f} × {piece.height / cm:.2f} cm) "
-                  f"does not fit on {cfg.paper}, placing it alone on a "
-                  f"larger page.")
+            print(tr(cfg.language, "msg.warn_oversize",
+                     piece=tr(cfg.language, f"piece.{piece.role}"),
+                     w=piece.width / cm, h=piece.height / cm,
+                     paper=cfg.paper))
             ux, uy, _, _ = _usable_area(cfg, (0, 0))
             m = cfg.page_margin_cm * cm
             size = (piece.width + 2 * m, piece.height + uy + m)
@@ -1422,13 +1438,11 @@ class OutputError(Exception):
     """A PDF could not be written."""
 
 
-def save_pdf(c, path):
+def save_pdf(cfg, c, path):
     try:
         c.save()
     except PermissionError:
-        raise OutputError(
-            f"Cannot write {path}. If it is open in a PDF viewer, close "
-            f"it and run the script again.") from None
+        raise OutputError(tr(cfg.language, "err.locked", path=path)) from None
 
 
 class FormCache:
@@ -1483,7 +1497,7 @@ def draw_ruler(cfg, c):
 
     c.setFont("Helvetica", 6.5)
     c.drawString(m + 5 * cm + 0.25 * cm, y - 0.04 * cm,
-                 "5 cm: print at 100 percent (actual size)")
+                 tr(cfg.language, "pdf.ruler"))
     c.restoreState()
 
 
@@ -1496,14 +1510,15 @@ def write_single_pdf(cfg, path, pieces):
         draw_item(cfg, c, Item(piece), None)
         c.showPage()
 
-    save_pdf(c, path)
+    save_pdf(cfg, c, path)
 
     if len(pieces) == 1:
         p = pieces[0]
-        print(f"PDF created: {path} "
-              f"({p.width / cm:.2f} × {p.height / cm:.2f} cm)")
+        print(tr(cfg.language, "msg.pdf_one", path=path,
+                 w=p.width / cm, h=p.height / cm))
     else:
-        print(f"PDF created: {path} ({len(pieces)} pages)")
+        print(tr(cfg.language, "msg.pdf_pages", path=path,
+                 count=len(pieces)))
 
 
 def write_complete_pdf(cfg, path, pages):
@@ -1511,7 +1526,8 @@ def write_complete_pdf(cfg, path, pages):
     c = canvas.Canvas(str(path), invariant=1)
     forms = FormCache(c) if cfg.reuse_textures else None
 
-    print(f"PDF created: {path} ({len(pages)} {cfg.paper} pages)")
+    print(tr(cfg.language, "msg.pdf_complete", path=path,
+             count=len(pages), paper=cfg.paper))
 
     for number, page in enumerate(pages, start=1):
         pw, ph = page.size
@@ -1533,44 +1549,51 @@ def write_complete_pdf(cfg, path, pages):
 
         c.showPage()
 
-        print(f"    page {number}: {describe_page(cfg, page)}")
+        print(tr(cfg.language, "msg.page", number=number,
+                 description=describe_page(cfg, page)))
 
-    save_pdf(c, path)
+    save_pdf(cfg, c, path)
 
 
 def describe_page(cfg, page):
+    def t(key, **values):
+        return tr(cfg.language, key, **values)
+
     counts = {}
     doors = 0
     for p in page.placements:
-        counts[p.item.piece.name] = counts.get(p.item.piece.name, 0) + 1
+        role = p.item.piece.role
+        counts[role] = counts.get(role, 0) + 1
         if p.item.piece.has_door and p.item.door:
             doors += 1
 
     pw, ph = page.size
-    orientation = "landscape" if pw > ph else "portrait"
-    parts = ", ".join(f"{n} × {name}" for name, n in counts.items())
+    orientation = t("orientation.landscape" if pw > ph
+                    else "orientation.portrait")
+    parts = ", ".join(t("msg.part", count=n, name=t(f"piece.{role}"))
+                      for role, n in counts.items())
     rotated = sum(p.rotated for p in page.placements)
 
-    text = f"{cfg.paper} {orientation}: {parts}"
-    if doors:
-        text += f" ({doors} with door)"
-    if rotated:
-        text += f", {rotated} rotated"
-    return text
+    return t("msg.page_desc", paper=cfg.paper, orientation=orientation,
+             parts=parts,
+             doors=t("msg.with_door", count=doors) if doors else "",
+             rotated=t("msg.rotated", count=rotated) if rotated else "")
 
 
 def generate_house(cfg, out_dir, prefix, wall_material, roof_material):
-    """Writes the 4 PDFs of a house with the given materials."""
+    """Writes the PDFs of a house with the given materials: the complete
+    one and, unless `complete_only` is set, one for each piece."""
     short_wall, long_wall, roof = make_pieces(cfg, wall_material,
                                               roof_material)
 
     paths = []
-    for piece, suffix in ((short_wall, "short_wall"),
-                          (long_wall, "long_wall"),
-                          (roof, "roof")):
-        path = out_dir / f"{prefix}_{suffix}.pdf"
-        write_single_pdf(cfg, path, [piece])
-        paths.append(path)
+    if not cfg.complete_only:
+        for piece, suffix in ((short_wall, "short_wall"),
+                              (long_wall, "long_wall"),
+                              (roof, "roof")):
+            path = out_dir / f"{prefix}_{suffix}.pdf"
+            write_single_pdf(cfg, path, [piece])
+            paths.append(path)
 
     path = out_dir / f"{prefix}_complete.pdf"
     write_complete_pdf(cfg, path, plan_pages(cfg, [short_wall, long_wall, roof]))
@@ -1591,6 +1614,9 @@ def run(cfg):
     Returns the list of PDFs written."""
     validate(cfg)
 
+    def t(key, **values):
+        return tr(cfg.language, key, **values)
+
     print()
     for warning in check_dimensions(cfg) + check_settings(cfg):
         print(warning)
@@ -1605,7 +1631,7 @@ def run(cfg):
         if cfg.generate_all_variants and cfg.textures_enabled:
             for wall in WALL_PALETTES:
                 for roof_mat in ROOF_PALETTES:
-                    print(f"--- walls: {wall}, roof: {roof_mat} ---")
+                    print(t("msg.variant", wall=wall, roof=roof_mat))
                     paths, roof = generate_house(
                         cfg, out_dir, f"{cfg.base_name}_{wall}_{roof_mat}",
                         wall, roof_mat)
@@ -1620,14 +1646,14 @@ def run(cfg):
         slope = side + cfg.roof_overhang_cm
 
         print()
-        print("Roof:")
-        print(f"  triangle side = {side:.2f} cm")
-        print(f"  base depth of each slope = {slope:.2f} cm")
-        print(f"  base size = {cfg.length_cm:.2f} × {2 * slope:.2f} cm")
-        print(f"  final sheet (+{cfg.roof_margin_cm} cm per side) = "
-              f"{roof.width / cm:.2f} × {roof.height / cm:.2f} cm")
+        print(t("msg.roof_title"))
+        print(t("msg.roof_side", value=side))
+        print(t("msg.roof_depth", value=slope))
+        print(t("msg.roof_base", length=cfg.length_cm, depth=2 * slope))
+        print(t("msg.roof_sheet", margin=cfg.roof_margin_cm,
+                w=roof.width / cm, h=roof.height / cm))
         print()
-        print(f"Door on the {cfg.door_on} side")
+        print(t("msg.door_side", side=t(f"side.{cfg.door_on}")))
 
     else:
         piece = wall_piece(cfg, "wall", "wall", cfg.width_cm, cfg.height_cm,
@@ -1638,10 +1664,10 @@ def run(cfg):
         files.append(path)
 
     print()
-    print("Inner rectangle (game squares):")
+    print(t("msg.inner"))
     print(f"  {cfg.width_cm} × {cfg.height_cm} cm")
     print()
-    print("Outer rectangle (with tabs):")
+    print(t("msg.outer"))
     print(f"  {cfg.width_cm + 2 * cfg.tab_width_cm} × "
           f"{cfg.height_cm + 2 * cfg.tab_width_cm} cm")
 
@@ -1708,21 +1734,21 @@ def build_parser():
 
 def launch_window(overrides):
     """Opens the window. Returns the exit code."""
+    language = overrides.get("language", "en")
+
     try:
         import gui
     except ImportError as error:
-        print(f"The window needs tkinter, which is missing ({error}).\n"
-              f"Use the command-line options instead, "
-              f"for example: python main.py --help", file=sys.stderr)
+        print(tr(language, "msg.no_tkinter", error=error), file=sys.stderr)
         return 1
 
+    palettes = {"wall_material": WALL_PALETTES,
+                "roof_material": ROOF_PALETTES}
     try:
         gui.launch(Config, run, validate, resolve_output_dir, config_to_args,
-                   overrides)
+                   overrides, palettes)
     except gui.NoDisplayError as error:
-        print(f"Cannot open a window here ({error}).\n"
-              f"Use the command-line options instead, "
-              f"for example: python main.py --no-gui", file=sys.stderr)
+        print(tr(language, "msg.no_display", error=error), file=sys.stderr)
         return 1
     return 0
 
@@ -1742,7 +1768,7 @@ def main(argv=None):
     try:
         run(cfg)
     except ValueError as error:
-        print(f"Invalid settings:\n{error}", file=sys.stderr)
+        print(tr(cfg.language, "msg.invalid", error=error), file=sys.stderr)
         return 2
     except OutputError as error:
         print(error, file=sys.stderr)

@@ -1,5 +1,7 @@
 """Tests for main.py. Run with:  python -m unittest -v"""
 
+import contextlib
+import io
 import math
 import tempfile
 import unittest
@@ -272,7 +274,8 @@ class FloorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch("builtins.print"):
             files = main.run(make_cfg(tmp, height_cm=10.0,
-                                      textures_enabled=True))
+                                      textures_enabled=True,
+                                      complete_only=False))
             self.assertEqual(len(files), 4)
 
 
@@ -350,6 +353,84 @@ class SettingsWarningTests(unittest.TestCase):
         self.assertIn("mix_pieces has no effect", printed)
 
 
+class CompleteOnlyTests(unittest.TestCase):
+
+    def test_it_is_on_by_default(self):
+        self.assertTrue(Config().complete_only)
+
+    def test_the_command_can_switch_it_off(self):
+        self.assertEqual(main.config_to_args(Config(complete_only=False)),
+                         ["--no-complete-only"])
+        parsed = main.build_parser().parse_args(["--no-complete-only"])
+        self.assertFalse(parsed.complete_only)
+
+
+class LanguageTests(unittest.TestCase):
+
+    def run_text(self, **overrides):
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, \
+                contextlib.redirect_stdout(out):
+            main.run(make_cfg(tmp, **overrides))
+        return out.getvalue()
+
+    def test_english_is_the_default(self):
+        text = self.run_text()
+        self.assertIn("PDF created", text)
+        self.assertIn("Roof:", text)
+        self.assertIn("Door on the short side", text)
+
+    def test_the_messages_come_out_in_italian(self):
+        text = self.run_text(language="it", houses=2)
+        self.assertIn("PDF creato", text)
+        self.assertIn("pagina 1:", text)
+        self.assertIn("Tetto:", text)
+        self.assertIn("Porta sul lato corto", text)
+        self.assertIn("lato corto", text)
+        for english in ("PDF created", "Roof:", "Door on the", "page 1"):
+            self.assertNotIn(english, text)
+
+    def test_warnings_are_translated(self):
+        warnings = main.check_settings(Config(mix_pieces=True, language="it"))
+        self.assertIn("ATTENZIONE", warnings[0])
+        warnings = main.check_dimensions(Config(width_cm=7, language="it"))
+        self.assertIn("caselle", warnings[0])
+
+    def test_errors_are_translated(self):
+        with self.assertRaises(ValueError) as error:
+            main.validate(Config(language="it", wall_material="marble"))
+        self.assertIn("deve essere", str(error.exception))
+        self.assertIn("brick", str(error.exception))
+
+    def test_an_unknown_language_is_refused(self):
+        with self.assertRaises(ValueError):
+            main.validate(Config(language="fr"))
+
+    def test_locked_file_message_in_italian(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(canvas.Canvas, "save",
+                                   side_effect=PermissionError):
+                with self.assertRaises(main.OutputError) as error:
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        main.run(make_cfg(tmp, language="it"))
+            self.assertIn("chiudilo", str(error.exception))
+
+    def test_the_language_option(self):
+        parsed = main.build_parser().parse_args(["--language", "it"])
+        self.assertEqual(parsed.language, "it")
+        self.assertEqual(main.config_to_args(Config(language="it")),
+                         ["--language", "it"])
+
+    def test_the_ruler_caption_follows_the_language(self):
+        with tempfile.TemporaryDirectory() as a, \
+                tempfile.TemporaryDirectory() as b:
+            with contextlib.redirect_stdout(io.StringIO()):
+                main.run(make_cfg(a, language="en"))
+                main.run(make_cfg(b, language="it"))
+            self.assertNotEqual((Path(a) / "house_DnD_complete.pdf").read_bytes(),
+                                (Path(b) / "house_DnD_complete.pdf").read_bytes())
+
+
 class ColourTests(unittest.TestCase):
 
     def test_marker_stays_red_on_white(self):
@@ -394,9 +475,17 @@ class OutputTests(unittest.TestCase):
         with mock.patch("builtins.print"):
             return main.run(cfg)
 
-    def test_whole_house_writes_four_pdfs(self):
+    def test_by_default_only_the_complete_pdf_is_written(self):
         with tempfile.TemporaryDirectory() as tmp:
             files = self.run_quiet(make_cfg(tmp))
+            self.assertEqual([f.name for f in files],
+                             ["house_DnD_complete.pdf"])
+            self.assertEqual(len(list(Path(tmp).glob("*.pdf"))), 1)
+            self.assertTrue(files[0].read_bytes().startswith(b"%PDF"))
+
+    def test_whole_house_can_also_write_the_single_pieces(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            files = self.run_quiet(make_cfg(tmp, complete_only=False))
             self.assertEqual(
                 sorted(f.name for f in files),
                 ["house_DnD_complete.pdf", "house_DnD_long_wall.pdf",
@@ -404,11 +493,20 @@ class OutputTests(unittest.TestCase):
             for f in files:
                 self.assertTrue(f.read_bytes().startswith(b"%PDF"))
 
+    def test_the_complete_pdf_is_the_same_with_or_without_the_pieces(self):
+        with tempfile.TemporaryDirectory() as a, \
+                tempfile.TemporaryDirectory() as b:
+            self.run_quiet(make_cfg(a, complete_only=True, houses=2))
+            self.run_quiet(make_cfg(b, complete_only=False, houses=2))
+            self.assertEqual((Path(a) / "house_DnD_complete.pdf").read_bytes(),
+                             (Path(b) / "house_DnD_complete.pdf").read_bytes())
+
     def test_same_settings_give_identical_files(self):
         with tempfile.TemporaryDirectory() as a, \
                 tempfile.TemporaryDirectory() as b:
             kwargs = dict(textures_enabled=True, wall_material="stone",
-                          roof_material="thatch", houses=2)
+                          roof_material="thatch", houses=2,
+                          complete_only=False)
             for tmp in (a, b):
                 self.run_quiet(make_cfg(tmp, **kwargs))
             for name in ("house_DnD_complete.pdf", "house_DnD_roof.pdf"):
@@ -435,6 +533,10 @@ class OutputTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             files = self.run_quiet(make_cfg(
                 tmp, textures_enabled=True, generate_all_variants=True))
+            self.assertEqual(len(files), 9)
+            files = self.run_quiet(make_cfg(
+                tmp, textures_enabled=True, generate_all_variants=True,
+                complete_only=False))
             self.assertEqual(len(files), 9 * 4)
 
     def test_locked_file_gives_a_clear_error(self):
