@@ -22,7 +22,7 @@ from reportlab.lib.pagesizes import A4, letter, landscape
 from reportlab.lib.units import cm
 from reportlab.pdfgen import canvas
 
-from i18n import LANGUAGES, tr
+from i18n import LANGUAGES, has_text, tr
 
 
 # ============================================================
@@ -118,6 +118,13 @@ class Config:
     window_spacing_cells: float = _f(
         2.0, "target distance between windows, in game squares "
              "(lower: more windows)", group="Door & windows")
+    roof_windows: bool = _f(
+        False, "cut flat windows into the roof, across the ridge, where "
+               "miniatures can stand (each gets a strip of paper that "
+               "supports it)", group="Door & windows")
+    roof_window_clearance_cm: float = _f(
+        0.1, "extra room around a roof window, on every side, so that the "
+             "strip fits easily", group="Door & windows")
     cell_cm: float = _f(
         2.5, "side of a game square", group="Door & windows")
     meters_per_cell: float = _f(
@@ -278,6 +285,21 @@ def validate(cfg):
         raise ValueError("\n".join(errors))
 
 
+def tr_or(language, key, default, **values):
+    """tr(), or `default` (English) for a text that is not in i18n.py yet."""
+    if has_text(language, key):
+        return tr(language, key, **values)
+    return default.format(**values) if values else default
+
+
+ROLE_NAMES = {"strip": "roof window strip"}
+
+
+def role_label(cfg, role):
+    """The name of a kind of piece, in the language of the messages."""
+    return tr_or(cfg.language, f"piece.{role}", ROLE_NAMES.get(role, role))
+
+
 def check_settings(cfg):
     """Returns a warning for every setting that has no effect because
     of another one."""
@@ -286,6 +308,18 @@ def check_settings(cfg):
         warnings.append(tr(cfg.language, "msg.warn_mix"))
     if cfg.generate_all_variants and not cfg.textures_enabled:
         warnings.append(tr(cfg.language, "msg.warn_variants"))
+    if cfg.roof_windows:
+        plan = roof_window_plan(cfg)
+        if not plan.runs:
+            reasons = {
+                "short": "the house must be at least 3 squares long",
+                "narrow": "the roof is too narrow for a window one "
+                          "square deep on each side",
+            }
+            warnings.append(tr_or(
+                cfg.language, "msg.warn_roof_windows",
+                "WARNING: roof_windows has no effect: {reason}.",
+                reason=reasons.get(plan.reason, plan.reason)))
     return warnings
 
 
@@ -809,6 +843,100 @@ def slope_side_cm(cfg, inner_width_cm):
 
 
 # ============================================================
+# ROOF WINDOWS
+#
+# A roof window is a flat spot on the roof where a miniature can stand.
+# At the ridge, a rectangle is cut out of the roof on both slopes. The
+# piece that is cut out is laid flat on top of a strip of paper folded
+# into a rectangle: the strip is the wall under it and the support.
+#
+#           flat top (the piece cut out of the roof)
+#        ________________________________          <- at the height of the ridge
+#       |                                |
+#       | strip (wall)        strip      |  h
+#   \___|                                |___/    <- the two slopes
+#        |<-- a -->|<-- a -->|
+#                  ridge
+#
+#   a = one square + a little room, measured horizontally from the ridge
+#   (the "2.6 cm" leg of the right triangle)
+#   hypotenuse = a / cos(roof angle): the same distance measured along the slope
+#   h = sqrt(hypotenuse^2 - a^2): the height of the strip
+# ============================================================
+
+def roof_window_runs(squares):
+    """Which squares of a house `squares` long get a roof window, as runs
+    of neighbouring squares: [(first square, how many), ...].
+
+    The first and last square stay free. In between, the windows take
+    every other square starting from the ends, mirrored, so the result is
+    always symmetric:
+      3 squares: one window in the middle
+      4 squares: two windows joined in the middle
+      5 squares: two windows with an empty square between them
+      6 squares: a window at the second and at the fifth square
+    """
+    inside = squares - 2
+    if inside < 1:
+        return []
+
+    half = (inside + 1) // 2
+    pattern = [i % 2 == 0 for i in range(half)]
+    pattern += pattern[::-1][inside % 2:]
+
+    runs, i = [], 0
+    while i < inside:
+        if pattern[i]:
+            start = i
+            while i < inside and pattern[i]:
+                i += 1
+            runs.append((start + 1, i - start))
+        else:
+            i += 1
+    return runs
+
+
+@dataclass(frozen=True)
+class RoofWindowPlan:
+    runs: tuple = ()               # ((first square, squares), ...)
+    holes: tuple = ()              # ((x0, x1), ...) in cm, on the roof sheet
+    hypotenuse_cm: float = 0.0     # each half of a hole, along the slope
+    wall_height_cm: float = 0.0    # height of the strip
+    ring_across_cm: float = 0.0    # length of the strip across the roof
+    reason: str = ""               # why there are no windows
+
+
+def roof_window_plan(cfg):
+    """Sizes and places of the roof windows, or an empty plan."""
+    if not cfg.roof_windows:
+        return RoofWindowPlan(reason="off")
+
+    cell = cfg.cell_cm
+    clearance = max(0.0, cfg.roof_window_clearance_cm)
+    half = cfg.width_cm / 2
+    a = cell + clearance
+
+    squares = int(cfg.length_cm / cell + 1e-6)
+    if squares < 3:
+        return RoofWindowPlan(reason="short")
+    if a > half - 0.3:
+        return RoofWindowPlan(reason="narrow")
+
+    side = slope_side_cm(cfg, cfg.width_cm)
+    hypotenuse = a * side / half                      # along the slope
+    height = math.sqrt(hypotenuse ** 2 - a ** 2)      # Pythagoras
+
+    runs = roof_window_runs(squares)
+    offset = (cfg.length_cm - squares * cell) / 2
+    start = cfg.roof_margin_cm + offset
+    holes = tuple((start + first * cell - clearance,
+                   start + (first + count) * cell + clearance)
+                  for first, count in runs)
+
+    return RoofWindowPlan(tuple(runs), holes, hypotenuse, height, 2 * cell)
+
+
+# ============================================================
 # PIECES
 #
 # A Piece knows its size and how to draw itself with the
@@ -1109,6 +1237,7 @@ def roof_piece(cfg, material, seed_id):
     Hr = (2 * slope + 2 * cfg.roof_margin_cm) * cm
 
     palette = ROOF_PALETTES[material] if cfg.textures_enabled else None
+    plan = roof_window_plan(cfg)
 
     def body(c, door_present=True):
         if palette is None:
@@ -1150,13 +1279,104 @@ def roof_piece(cfg, material, seed_id):
         c.setDash(*cfg.dash)
         c.rect(0, 0, Wr, Hr, stroke=1, fill=0)
 
-        # Ridge (fold), in the middle
+        # Ridge (fold), in the middle. It is not drawn through the roof
+        # windows: the piece cut out there lies flat
         c.setDash()
-        c.line(0, Hr / 2, Wr, Hr / 2)
+        edges = [0.0]
+        for x0, x1 in plan.holes:
+            edges += [x0 * cm, x1 * cm]
+        edges.append(Wr)
+        for i in range(0, len(edges), 2):
+            c.line(edges[i], Hr / 2, edges[i + 1], Hr / 2)
+
+        # Roof windows (cut): across the ridge, on both slopes
+        if plan.holes:
+            c.setDash(*cfg.dash)
+            half_depth = plan.hypotenuse_cm * cm
+            for x0, x1 in plan.holes:
+                c.rect(x0 * cm, Hr / 2 - half_depth, (x1 - x0) * cm,
+                       2 * half_depth, stroke=1, fill=0)
 
         c.restoreState()
 
     return Piece("roof", "roof", Wr, Hr, body, outline, per_house=1)
+
+
+def strip_piece(cfg, material, squares, count, plan, seed_id):
+    """The strip of paper under a roof window: folded into a rectangle,
+    it is the wall under the flat top and its support.
+
+    It has two sides as long as the window (`squares` squares) and two
+    sides as long as the distance between the two walls of the window,
+    across the roof. Its height is the other leg of the right triangle:
+    see the notes on roof windows above.
+
+      +-----------+-------------------+-----------+-------------------+-+
+      | window    | across the roof   | window    | across the roof   |g|
+      | length    |                   | length    |                   |l|
+      +-----------+-------------------+-----------+-------------------+-+
+         solid lines = folds, dashed = cuts, g = glue tab
+    """
+    along = squares * cfg.cell_cm * cm
+    across = plan.ring_across_cm * cm
+    height = plan.wall_height_cm * cm
+    glue = 0.5 * cm
+    chamfer = min(glue, height / 3)
+
+    edges = [0.0, along, along + across, 2 * along + across,
+             2 * along + 2 * across]
+    end = edges[-1]
+    width = end + glue
+
+    net = [(0, 0), (end, 0), (end + glue, chamfer),
+           (end + glue, height - chamfer), (end, height), (0, height)]
+
+    palette = WALL_PALETTES[material] if cfg.textures_enabled else None
+
+    def body(c, door_present=True):
+        if palette is None:
+            return
+
+        c.saveState()
+        rnd = random.Random(f"{cfg.seed}/{seed_id}/{material}")
+
+        # Base colour everywhere, glue tab included
+        fill_path(c, polygon(c, net), palette["base"])
+
+        # Wall texture on the four sides
+        for x0, x1 in zip(edges, edges[1:]):
+            c.saveState()
+            area = c.beginPath()
+            area.rect(x0, 0, x1 - x0, height)
+            c.clipPath(area, stroke=0, fill=0)
+            WALL_TEXTURES[material](c, x0, 0, x1, height, palette, rnd)
+            c.restoreState()
+
+        c.restoreState()
+
+    def outline(c, labels=None):
+        c.saveState()
+        c.setStrokeColorRGB(*cfg.line_color)
+        c.setLineWidth(cfg.line_width)
+
+        # Cut: the outline of the strip with its glue tab
+        c.setDash(*cfg.dash)
+        p = c.beginPath()
+        p.moveTo(*net[0])
+        for point in net[1:]:
+            p.lineTo(*point)
+        p.close()
+        c.drawPath(p, stroke=1, fill=0)
+
+        # Fold: between the sides, and before the glue tab
+        c.setDash()
+        for x in edges[1:]:
+            c.line(x, 0, x, height)
+
+        c.restoreState()
+
+    return Piece(f"roof strip {squares}", "strip", width, height, body,
+                 outline, per_house=count)
 
 
 def make_pieces(cfg, wall_material, roof_material):
@@ -1168,7 +1388,19 @@ def make_pieces(cfg, wall_material, roof_material):
         cfg, "long wall", "long", cfg.length_cm, cfg.height_cm,
         False, cfg.door_on == "long", wall_material, seed_id=2)
     roof = roof_piece(cfg, roof_material, seed_id=3)
-    return short_wall, long_wall, roof
+    pieces = [short_wall, long_wall, roof]
+
+    # One strip for every roof window; windows of the same width share
+    # the same piece
+    plan = roof_window_plan(cfg)
+    widths = {}
+    for _, squares in plan.runs:
+        widths[squares] = widths.get(squares, 0) + 1
+    for squares in sorted(widths):
+        pieces.append(strip_piece(cfg, wall_material, squares,
+                                  widths[squares], plan,
+                                  seed_id=10 + squares))
+    return pieces
 
 
 # ============================================================
@@ -1336,7 +1568,7 @@ def pack_pages(cfg, items):
             item = remaining[0]
             piece = item.piece
             print(tr(cfg.language, "msg.warn_oversize",
-                     piece=tr(cfg.language, f"piece.{piece.role}"),
+                     piece=role_label(cfg, piece.role),
                      w=piece.width / cm, h=piece.height / cm,
                      paper=cfg.paper))
             ux, uy, _, _ = _usable_area(cfg, (0, 0))
@@ -1570,7 +1802,7 @@ def describe_page(cfg, page):
     pw, ph = page.size
     orientation = t("orientation.landscape" if pw > ph
                     else "orientation.portrait")
-    parts = ", ".join(t("msg.part", count=n, name=t(f"piece.{role}"))
+    parts = ", ".join(t("msg.part", count=n, name=role_label(cfg, role))
                       for role, n in counts.items())
     rotated = sum(p.rotated for p in page.placements)
 
@@ -1583,22 +1815,20 @@ def describe_page(cfg, page):
 def generate_house(cfg, out_dir, prefix, wall_material, roof_material):
     """Writes the PDFs of a house with the given materials: the complete
     one and, unless `complete_only` is set, one for each piece."""
-    short_wall, long_wall, roof = make_pieces(cfg, wall_material,
-                                              roof_material)
+    pieces = make_pieces(cfg, wall_material, roof_material)
 
     paths = []
     if not cfg.complete_only:
-        for piece, suffix in ((short_wall, "short_wall"),
-                              (long_wall, "long_wall"),
-                              (roof, "roof")):
-            path = out_dir / f"{prefix}_{suffix}.pdf"
+        for piece in pieces:
+            path = out_dir / f"{prefix}_{piece.name.replace(' ', '_')}.pdf"
             write_single_pdf(cfg, path, [piece])
             paths.append(path)
 
     path = out_dir / f"{prefix}_complete.pdf"
-    write_complete_pdf(cfg, path, plan_pages(cfg, [short_wall, long_wall, roof]))
+    write_complete_pdf(cfg, path, plan_pages(cfg, pieces))
     paths.append(path)
 
+    roof = next(piece for piece in pieces if piece.role == "roof")
     return paths, roof
 
 
