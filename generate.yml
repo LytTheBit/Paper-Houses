@@ -11,6 +11,24 @@ on:
         description: "Number of houses (empty: fill every page with copies of one piece)"
         type: string
         default: "1"
+      house_shape:
+        description: "Shape of the house"
+        type: choice
+        options: [rectangle, L]
+        default: rectangle
+      roof_type:
+        description: "Shape of the roof"
+        type: choice
+        options: [gabled, flat]
+        default: gabled
+      roof_windows:
+        description: "Flat windows on the roof, for miniatures (rectangular house with a gabled roof)"
+        type: boolean
+        default: false
+      top_bottom_tabs:
+        description: "Print the tabs at the top and at the bottom of the walls"
+        type: boolean
+        default: true
       textures:
         description: "Paint textures (otherwise only the cutting lines)"
         type: boolean
@@ -18,12 +36,12 @@ on:
       wall_material:
         description: "Wall material"
         type: choice
-        options: [brick, stone, wood]
+        options: [brick, stone, wood, marble, ice]
         default: brick
       roof_material:
         description: "Roof material"
         type: choice
-        options: [tiles, wood, thatch]
+        options: [tiles, blue_tiles, wood, thatch, stone]
         default: tiles
       all_variants:
         description: "Every wall/roof combination (9 houses, needs textures)"
@@ -67,6 +85,10 @@ on:
         description: "Long side, inner size in cm (multiple of 2.5)"
         type: string
         default: "12.5"
+      wing_length_cm:
+        description: "L shape only: length of the second wing in cm (multiple of 2.5)"
+        type: string
+        default: "10"
       height_cm:
         description: "Wall height, inner size in cm (multiple of 2.5)"
         type: string
@@ -105,6 +127,11 @@ jobs:
         # into the script, so they cannot be run as shell code.
         env:
           IN_HOUSES: ${{ inputs.houses }}
+          IN_SHAPE: ${{ inputs.house_shape }}
+          IN_ROOF_TYPE: ${{ inputs.roof_type }}
+          IN_ROOF_WINDOWS: ${{ inputs.roof_windows }}
+          IN_TABS: ${{ inputs.top_bottom_tabs }}
+          IN_WING: ${{ inputs.wing_length_cm }}
           IN_TEXTURES: ${{ inputs.textures }}
           IN_WALL: ${{ inputs.wall_material }}
           IN_ROOF: ${{ inputs.roof_material }}
@@ -145,6 +172,11 @@ jobs:
             "$(flag calibration-ruler "$IN_RULER")"
             --width-cm "$IN_WIDTH"
             --length-cm "$IN_LENGTH"
+            --wing-length-cm "$IN_WING"
+            --house-shape "$IN_SHAPE"
+            --roof-type "$IN_ROOF_TYPE"
+            "$(flag roof-windows "$IN_ROOF_WINDOWS")"
+            "$(flag top-bottom-tabs "$IN_TABS")"
             --height-cm "$IN_HEIGHT"
             --roof-height-cm "$IN_ROOF_HEIGHT"
             --seed "$IN_SEED"

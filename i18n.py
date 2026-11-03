@@ -68,12 +68,21 @@ STRINGS["en"] = {
     "piece.long": "long wall",
     "piece.roof": "roof",
     "piece.wall": "wall",
+    "piece.strip": "roof window strip",
     "side.short": "short",
     "side.long": "long",
     "msg.warn_mix": "WARNING: mix_pieces has no effect without houses "
                     "(set the number of houses to mix the pieces).",
     "msg.warn_variants": "WARNING: generate_all_variants has no effect "
                          "without textures.",
+    "msg.warn_roof_windows": "WARNING: roof_windows has no effect: "
+                             "{reason}.",
+    "msg.rw_off": "the roof windows are off",
+    "msg.rw_short": "the house must be at least 3 squares long",
+    "msg.rw_narrow": "the roof is too narrow for a window one square deep "
+                     "on each slope",
+    "msg.rw_shape": "they only work on a rectangular house with a gabled "
+                    "roof",
     "msg.warn_dimension": "WARNING: {name} = {value} cm is not a multiple "
                           "of {cell} cm ({squares:.2f} squares).",
     "msg.warn_oversize": "WARNING: {piece} ({w:.2f} × {h:.2f} cm) does not "
@@ -106,6 +115,11 @@ STRINGS["en"] = {
     "err.paper": "paper must be one of {options} (got {value!r})",
     "err.language": "language must be one of {options} (got {value!r})",
     "err.houses": "houses must be at least 1 (got {value})",
+    "err.house_shape": "house_shape must be 'rectangle' or 'L' "
+                       "(got {value!r})",
+    "err.roof_type": "roof_type must be 'gabled' or 'flat' (got {value!r})",
+    "err.wing_short": "in an L-shaped house both wings must be longer than "
+                      "the width of the house",
     "err.positive": "{name} must be positive (got {value})",
     "err.locked": "Cannot write {path}. If it is open in a PDF viewer, "
                   "close it and run the script again.",
@@ -166,6 +180,16 @@ STRINGS["en"] = {
     "card.size": "Size",
     "card.picker": "Pick it on the grid",
     "card.amount": "How many houses",
+    "card.shape": "Shape and roof",
+    "ui.shape": "House shape",
+    "ui.shape_rect": "Rectangle",
+    "ui.shape_l": "L shape",
+    "ui.roof_shape": "Roof",
+    "ui.roof_gabled": "Two slopes",
+    "ui.roof_flat": "Flat",
+    "ui.sq.wing_length_cm": "Second wing (squares)",
+    "ui.roof_windows_hint": "Flat spots on the roof where miniatures "
+                            "can stand.",
     "ui.sq.width_cm": "Gable side (squares)",
     "ui.sq.length_cm": "Long side (squares)",
     "ui.sq.height_cm": "Wall height (squares)",
@@ -176,7 +200,7 @@ STRINGS["en"] = {
     "ui.picker_gable": "Gable side",
     "ui.picker_caption": "{rows} × {cols} squares ({w} × {l} cm)",
     "ui.picker_none": "Move over the grid and click",
-    "ui.specific_houses": "Print a specific number of houses",
+    "ui.specific_houses": "A specific number of houses",
     "ui.houses_hint": "Leave it off to fill every page with copies of one "
                       "piece.",
 
@@ -192,6 +216,9 @@ STRINGS["en"] = {
     "material.wood": "Wood",
     "material.tiles": "Tiles",
     "material.thatch": "Thatch",
+    "material.marble": "Marble",
+    "material.ice": "Ice",
+    "material.blue_tiles": "Blue tiles",
 
     # ---- Window: doors page ----
     "card.door": "Door",
@@ -325,6 +352,30 @@ STRINGS["en"] = {
     "help.base_name": "base name of the PDFs",
     "label.language": "Language",
     "help.language": "language of the messages",
+    "label.roof_windows": "Roof windows",
+    "help.roof_windows": "cut flat windows into the roof, halfway down each "
+                         "slope, where miniatures can stand (a strip of "
+                         "paper under them is the wall and the support)",
+    "label.roof_window_position": "Roof window position",
+    "help.roof_window_position": "where a roof window sits on the slope, "
+                                 "from 0 (at the ridge) to 1 (at the "
+                                 "eaves); 0.5 is halfway",
+    "label.roof_window_clearance_cm": "Roof window clearance (cm)",
+    "help.roof_window_clearance_cm": "extra room around a roof window, on "
+                                     "every side, so that the strip fits "
+                                     "easily",
+    "label.house_shape": "House shape",
+    "help.house_shape": "shape of the house: a rectangle, or an L made of "
+                        "two wings",
+    "label.wing_length_cm": "Second wing, length (cm)",
+    "help.wing_length_cm": "L shape only: total length of the second wing, "
+                           "measured along the outside of the house",
+    "label.roof_type": "Roof shape",
+    "help.roof_type": "shape of the roof: gabled (two slopes) or flat",
+    "label.top_bottom_tabs": "Top and bottom tabs",
+    "help.top_bottom_tabs": "print the tabs at the top and at the bottom "
+                            "of the walls (the side tabs are always "
+                            "printed)",
 }
 
 # ============================================================
@@ -347,12 +398,21 @@ STRINGS["it"] = {
     "piece.long": "lato lungo",
     "piece.roof": "tetto",
     "piece.wall": "parete",
+    "piece.strip": "striscia delle finestre del tetto",
     "side.short": "corto",
     "side.long": "lungo",
     "msg.warn_mix": "ATTENZIONE: «mescola i pezzi» non ha effetto senza il "
                     "numero di case (indica quante case stampare).",
     "msg.warn_variants": "ATTENZIONE: «tutte le combinazioni» non ha "
                          "effetto senza le texture.",
+    "msg.warn_roof_windows": "ATTENZIONE: «finestre sul tetto» non ha "
+                             "effetto: {reason}.",
+    "msg.rw_off": "le finestre sul tetto sono spente",
+    "msg.rw_short": "la casa deve essere lunga almeno 3 caselle",
+    "msg.rw_narrow": "il tetto è troppo stretto per una finestra profonda "
+                     "una casella su ogni falda",
+    "msg.rw_shape": "funzionano solo su una casa rettangolare con il tetto "
+                    "a due falde",
     "msg.warn_dimension": "ATTENZIONE: {name} = {value} cm non è un "
                           "multiplo di {cell} cm ({squares:.2f} caselle).",
     "msg.warn_oversize": "ATTENZIONE: {piece} ({w:.2f} × {h:.2f} cm) non "
@@ -388,6 +448,12 @@ STRINGS["it"] = {
     "err.language": "language deve essere uno tra {options} "
                     "(ricevuto {value!r})",
     "err.houses": "houses deve essere almeno 1 (ricevuto {value})",
+    "err.house_shape": "house_shape deve essere 'rectangle' o 'L' "
+                       "(ricevuto {value!r})",
+    "err.roof_type": "roof_type deve essere 'gabled' o 'flat' "
+                     "(ricevuto {value!r})",
+    "err.wing_short": "in una casa a L le due ali devono essere più lunghe "
+                      "della larghezza della casa",
     "err.positive": "{name} deve essere positivo (ricevuto {value})",
     "err.locked": "Non riesco a scrivere {path}. Se è aperto in un "
                   "visualizzatore di PDF, chiudilo e riavvia il programma.",
@@ -448,7 +514,17 @@ STRINGS["it"] = {
     "card.size": "Misure",
     "card.picker": "Sceglila sulla griglia",
     "card.amount": "Quante case",
-    "ui.sq.width_cm": "Lato corto, con il tetto (caselle)",
+    "card.shape": "Forma e tetto",
+    "ui.shape": "Forma della casa",
+    "ui.shape_rect": "Rettangolo",
+    "ui.shape_l": "Ad L",
+    "ui.roof_shape": "Tetto",
+    "ui.roof_gabled": "A due falde",
+    "ui.roof_flat": "Piatto",
+    "ui.sq.wing_length_cm": "Seconda ala (caselle)",
+    "ui.roof_windows_hint": "Punti piani sul tetto dove possono stare le "
+                           "miniature.",
+    "ui.sq.width_cm": "Lato corto (caselle)",
     "ui.sq.length_cm": "Lato lungo (caselle)",
     "ui.sq.height_cm": "Altezza delle pareti (caselle)",
     "ui.sq.roof_height_cm": "Altezza del tetto (caselle)",
@@ -458,7 +534,7 @@ STRINGS["it"] = {
     "ui.picker_gable": "Lato corto",
     "ui.picker_caption": "{rows} × {cols} caselle ({w} × {l} cm)",
     "ui.picker_none": "Passa sulla griglia e clicca",
-    "ui.specific_houses": "Stampa un numero preciso di case",
+    "ui.specific_houses": "Un numero preciso di case",
     "ui.houses_hint": "Se lo lasci spento, ogni foglio viene riempito con "
                       "copie di un solo pezzo.",
 
@@ -474,6 +550,9 @@ STRINGS["it"] = {
     "material.wood": "Legno",
     "material.tiles": "Tegole",
     "material.thatch": "Paglia",
+    "material.marble": "Marmo",
+    "material.ice": "Ghiaccio",
+    "material.blue_tiles": "Tegole blu",
 
     # ---- Window: doors page ----
     "card.door": "Porta",
@@ -613,4 +692,28 @@ STRINGS["it"] = {
     "help.base_name": "nome base dei PDF",
     "label.language": "Lingua",
     "help.language": "lingua dei messaggi",
+    "label.roof_windows": "Finestre sul tetto",
+    "help.roof_windows": "taglia nel tetto finestre piane, a metà di ogni "
+                         "falda, dove possono stare le miniature (una "
+                         "striscia di carta sotto di esse fa da muro e da "
+                         "supporto)",
+    "label.roof_window_position": "Posizione delle finestre sul tetto",
+    "help.roof_window_position": "dove sta una finestra sulla falda, da 0 "
+                                 "(al colmo) a 1 (alla gronda); 0,5 è a "
+                                 "metà",
+    "label.roof_window_clearance_cm": "Gioco delle finestre sul tetto (cm)",
+    "help.roof_window_clearance_cm": "spazio in più attorno a una finestra "
+                                     "sul tetto, su ogni lato, perché la "
+                                     "striscia entri facilmente",
+    "label.house_shape": "Forma della casa",
+    "help.house_shape": "forma della casa: un rettangolo, oppure una L "
+                        "fatta di due ali",
+    "label.wing_length_cm": "Seconda ala, lunghezza (cm)",
+    "help.wing_length_cm": "solo per la forma a L: lunghezza totale della "
+                           "seconda ala, misurata lungo l'esterno della casa",
+    "label.roof_type": "Forma del tetto",
+    "help.roof_type": "forma del tetto: a due falde oppure piatto",
+    "label.top_bottom_tabs": "Linguette in alto e in basso",
+    "help.top_bottom_tabs": "stampa le linguette in alto e in basso delle "
+                            "pareti (quelle laterali si stampano sempre)",
 }

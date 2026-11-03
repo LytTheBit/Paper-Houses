@@ -3,6 +3,7 @@
 import contextlib
 import io
 import math
+import random
 import tempfile
 import unittest
 from collections import Counter
@@ -398,7 +399,7 @@ class LanguageTests(unittest.TestCase):
 
     def test_errors_are_translated(self):
         with self.assertRaises(ValueError) as error:
-            main.validate(Config(language="it", wall_material="marble"))
+            main.validate(Config(language="it", wall_material="granite"))
         self.assertIn("deve essere", str(error.exception))
         self.assertIn("brick", str(error.exception))
 
@@ -431,6 +432,457 @@ class LanguageTests(unittest.TestCase):
                                 (Path(b) / "house_DnD_complete.pdf").read_bytes())
 
 
+class RoofWindowTests(unittest.TestCase):
+
+    def cfg(self, **kw):
+        values = dict(roof_windows=True, width_cm=7.5, length_cm=12.5,
+                      roof_height_cm=2.0)
+        values.update(kw)
+        return Config(**values)
+
+    def test_where_the_windows_go(self):
+        expected = {2: [], 3: [(1, 1)], 4: [(1, 2)], 5: [(1, 1), (3, 1)],
+                    6: [(1, 1), (4, 1)], 7: [(1, 1), (3, 1), (5, 1)],
+                    8: [(1, 1), (3, 2), (6, 1)]}
+        for squares, runs in expected.items():
+            self.assertEqual(main.roof_window_runs(squares), runs, squares)
+
+    def test_windows_are_symmetric_and_leave_the_ends_free(self):
+        for squares in range(3, 25):
+            row = [False] * squares
+            for first, count in main.roof_window_runs(squares):
+                for k in range(count):
+                    row[first + k] = True
+            self.assertEqual(row, row[::-1], squares)
+            self.assertFalse(row[0] or row[-1], squares)
+            self.assertTrue(any(row), squares)
+
+    def test_the_sizes_follow_the_right_triangle(self):
+        plan = main.roof_window_plan(self.cfg())
+        c = 2.6                                          # a square + 1 mm
+        half = 3.75
+        self.assertAlmostEqual(plan.hypotenuse_cm, c * 4.25 / half)
+        self.assertAlmostEqual(plan.wall_height_cm,
+                               math.sqrt(plan.hypotenuse_cm ** 2 - c ** 2))
+        self.assertAlmostEqual(plan.wall_height_cm, c * 2.0 / half)
+
+    def test_the_window_is_halfway_on_the_slope(self):
+        plan = main.roof_window_plan(self.cfg())
+        g = (3.75 - 2.6) / 2                       # ridge to the fold, flat
+        self.assertAlmostEqual(plan.gap_cm, 2 * g)
+        self.assertAlmostEqual(plan.hinge_cm, g / (3.75 / 4.25))
+
+    def test_the_strip_covers_two_windows_and_the_roof_between_them(self):
+        plan = main.roof_window_plan(self.cfg())
+        self.assertAlmostEqual(plan.ring_across_cm, 2 * 2.6 + plan.gap_cm)
+
+    def test_the_position_moves_the_windows(self):
+        at_ridge = main.roof_window_plan(self.cfg(roof_window_position=0.0))
+        halfway = main.roof_window_plan(self.cfg())
+        at_eaves = main.roof_window_plan(self.cfg(roof_window_position=1.0))
+        self.assertAlmostEqual(at_ridge.gap_cm, 0)
+        self.assertAlmostEqual(at_ridge.ring_across_cm, 5.2)
+        self.assertGreater(halfway.gap_cm, at_ridge.gap_cm)
+        self.assertGreater(at_eaves.gap_cm, halfway.gap_cm)
+        self.assertAlmostEqual(at_eaves.ring_across_cm, 7.5)
+        # the height of the strip does not depend on the position
+        self.assertAlmostEqual(at_ridge.wall_height_cm,
+                               at_eaves.wall_height_cm)
+
+    def test_the_position_is_kept_between_0_and_1(self):
+        low = main.roof_window_plan(self.cfg(roof_window_position=-3))
+        high = main.roof_window_plan(self.cfg(roof_window_position=9))
+        self.assertAlmostEqual(low.gap_cm, 0)
+        self.assertAlmostEqual(high.ring_across_cm, 7.5)
+
+    def test_holes_are_symmetric_on_the_roof_sheet(self):
+        plan = main.roof_window_plan(self.cfg())
+        sheet = 12.5 + 2 * 1.0
+        for (a0, a1), (b0, b1) in zip(plan.holes, plan.holes[::-1]):
+            self.assertAlmostEqual(a0 + b1, sheet)
+            self.assertAlmostEqual(a1 + b0, sheet)
+
+    def test_why_there_are_no_windows(self):
+        self.assertEqual(main.roof_window_plan(Config()).reason, "off")
+        self.assertEqual(main.roof_window_plan(
+            self.cfg(length_cm=5.0)).reason, "short")
+        self.assertEqual(main.roof_window_plan(
+            self.cfg(width_cm=5.0)).reason, "narrow")
+        self.assertEqual(main.roof_window_plan(
+            self.cfg(house_shape="L")).reason, "shape")
+        self.assertEqual(main.roof_window_plan(
+            self.cfg(roof_type="flat")).reason, "shape")
+
+    def test_a_warning_says_why(self):
+        for kw, word in ((dict(length_cm=5.0), "3 squares"),
+                         (dict(width_cm=5.0), "narrow"),
+                         (dict(house_shape="L"), "rectangular")):
+            warnings = main.check_settings(self.cfg(**kw))
+            self.assertEqual(len(warnings), 1, kw)
+            self.assertIn(word, warnings[0])
+        italian = main.check_settings(self.cfg(length_cm=5.0, language="it"))
+        self.assertIn("almeno 3 caselle", italian[0])
+        self.assertEqual(main.check_settings(self.cfg()), [])
+
+    def test_one_strip_for_every_window(self):
+        cases = {5.0: 0, 7.5: 1, 10.0: 1, 12.5: 2, 15.0: 2, 17.5: 3}
+        for length, strips in cases.items():
+            pieces = main.make_pieces(self.cfg(length_cm=length), "stone",
+                                      "tiles")
+            kinds = [p for p in pieces if p.role == "strip"]
+            self.assertEqual(sum(p.per_house for p in kinds), strips, length)
+
+    def test_windows_of_the_same_width_share_a_piece(self):
+        pieces = main.make_pieces(self.cfg(length_cm=20.0), "stone", "tiles")
+        kinds = {p.name: p.per_house for p in pieces if p.role == "strip"}
+        self.assertEqual(kinds, {"roof strip 1": 2, "roof strip 2": 1})
+
+    def test_the_size_of_the_strip(self):
+        plan = main.roof_window_plan(self.cfg())
+        strip = [p for p in main.make_pieces(self.cfg(), "stone", "tiles")
+                 if p.role == "strip"][0]
+        along, across = 2.5, plan.ring_across_cm
+        self.assertAlmostEqual(strip.width / cm,
+                               2 * along + 2 * across + 0.5)
+        self.assertAlmostEqual(strip.height / cm, plan.wall_height_cm)
+
+    def test_the_roof_sheet_keeps_its_size_but_not_its_look(self):
+        a = main.make_pieces(self.cfg(roof_windows=False), "stone", "tiles")[2]
+        b = main.make_pieces(self.cfg(), "stone", "tiles")[2]
+        self.assertAlmostEqual(a.width, b.width)
+        self.assertAlmostEqual(a.height, b.height)
+        with tempfile.TemporaryDirectory() as tmp, \
+                contextlib.redirect_stdout(io.StringIO()):
+            main.run(make_cfg(tmp, roof_windows=True, length_cm=12.5))
+            with_windows = (Path(tmp) / "house_DnD_complete.pdf").read_bytes()
+            main.run(make_cfg(tmp, roof_windows=False, length_cm=12.5))
+            without = (Path(tmp) / "house_DnD_complete.pdf").read_bytes()
+        self.assertNotEqual(with_windows, without)
+
+    def test_the_strips_are_in_the_pages(self):
+        cfg = self.cfg(houses=2, mix_pieces=True)
+        pieces = main.make_pieces(cfg, "stone", "tiles")
+        pages = main.plan_pages(cfg, pieces)
+        strips = sum(1 for page in pages for p in page.placements
+                     if p.item.piece.role == "strip")
+        self.assertEqual(strips, 2 * 2)
+
+    def test_a_window_is_drawn_on_the_two_walls_that_face_outside(self):
+        calls = []
+        real = main.window
+        with mock.patch.object(main, "window",
+                               side_effect=lambda *a, **k: calls.append((a, k))
+                               or real(*a, **k)):
+            strip = [p for p in main.make_pieces(
+                self.cfg(textures_enabled=True), "stone", "tiles")
+                if p.role == "strip"][0]
+            strip.body(canvas.Canvas(io.BytesIO()))
+        self.assertEqual(len(calls), 2)
+        for args, kwargs in calls:
+            width, height = args[3], args[4]
+            self.assertGreater(width, height)            # longer than tall
+            self.assertGreaterEqual(kwargs["panes_x"], 2)
+
+    def test_no_window_picture_when_windows_are_off(self):
+        calls = []
+        with mock.patch.object(main, "window",
+                               side_effect=lambda *a, **k: calls.append(1)):
+            strip = [p for p in main.make_pieces(
+                self.cfg(textures_enabled=True, door_and_windows=False),
+                "stone", "tiles") if p.role == "strip"][0]
+            strip.body(canvas.Canvas(io.BytesIO()))
+        self.assertEqual(calls, [])
+
+
+class ShapeTests(unittest.TestCase):
+
+    def test_offset_of_a_rectangle(self):
+        self.assertEqual(
+            main.offset_polygon([(0, 0), (10, 0), (10, 5), (0, 5)], 1),
+            [(-1, -1), (11, -1), (11, 6), (-1, 6)])
+
+    def test_offset_of_an_l(self):
+        outline = main.offset_polygon(
+            [(0, 0), (10, 0), (10, 5), (5, 5), (5, 8), (0, 8)], 1)
+        self.assertEqual(outline, [(-1, -1), (11, -1), (11, 6), (6, 6),
+                                   (6, 9), (-1, 9)])
+
+    def l_pieces(self, **kw):
+        values = dict(house_shape="L", width_cm=7.5, length_cm=12.5,
+                      wing_length_cm=10.0, height_cm=5.0, roof_height_cm=2.0)
+        values.update(kw)
+        cfg = Config(**values)
+        return cfg, main.make_pieces(cfg, "stone", "tiles")
+
+    def test_an_l_has_six_walls_and_two_roofs(self):
+        cfg, pieces = self.l_pieces()
+        walls = [p for p in pieces if p.role == "wall"]
+        roofs = [p for p in pieces if p.role == "roof"]
+        self.assertEqual(len(walls), 6)
+        self.assertEqual([p.suffix for p in roofs], [" A", " B"])
+
+    def test_the_walls_have_the_lengths_of_the_outline(self):
+        cfg, pieces = self.l_pieces()
+        walls = [p for p in pieces if p.role == "wall"]
+        lengths = [12.5, 7.5, 5.0, 2.5, 7.5, 10.0]
+        for piece, length in zip(walls, lengths):
+            self.assertAlmostEqual(piece.width / cm, length + 2.0)
+
+    def test_the_two_gables_have_a_triangle(self):
+        cfg, pieces = self.l_pieces()
+        walls = [p for p in pieces if p.role == "wall"]
+        tall = [p for p in walls if p.height / cm > 7.5]
+        self.assertEqual([p.suffix for p in tall], [" 2", " 5"])
+
+    def test_every_corner_letter_is_on_two_walls(self):
+        cfg, pieces = self.l_pieces()
+        letters = [letter for p in pieces if p.role == "wall"
+                   for letter in p.joints]
+        self.assertEqual(sorted(letters), sorted(list("ABCDEF") * 2))
+
+    def test_neighbouring_walls_share_a_letter(self):
+        cfg, pieces = self.l_pieces()
+        walls = [p for p in pieces if p.role == "wall"]
+        for i, wall in enumerate(walls):
+            self.assertEqual(wall.joints[1], walls[(i + 1) % 6].joints[0])
+
+    def test_one_wall_has_the_door(self):
+        for door_on, index in (("short", 1), ("long", 0)):
+            cfg, pieces = self.l_pieces(door_on=door_on)
+            walls = [p for p in pieces if p.role == "wall"]
+            self.assertEqual([i for i, p in enumerate(walls) if p.has_door],
+                             [index])
+
+    def test_the_labels_come_from_the_walls(self):
+        cfg, pieces = self.l_pieces(houses=1)
+        pages = main.plan_pages(cfg, pieces)
+        labels = [p.item.labels for page in pages for p in page.placements
+                  if p.item.piece.role == "wall"]
+        self.assertEqual(sorted(x for pair in labels for x in pair),
+                         sorted(list("ABCDEF") * 2))
+
+    def test_a_flat_l_has_a_single_roof(self):
+        cfg, pieces = self.l_pieces(roof_type="flat")
+        roofs = [p for p in pieces if p.role == "roof"]
+        self.assertEqual(len(roofs), 1)
+        walls = [p for p in pieces if p.role == "wall"]
+        self.assertTrue(all(p.height / cm < 8 for p in walls))   # no gables
+
+    def test_the_flat_roof_of_an_l_covers_the_house_and_a_margin(self):
+        cfg, pieces = self.l_pieces(roof_type="flat")
+        roof = [p for p in pieces if p.role == "roof"][0]
+        self.assertAlmostEqual(roof.width / cm, 12.5 + 2)
+        self.assertAlmostEqual(roof.height / cm, 10.0 + 2)
+
+    def test_the_wing_roofs_have_the_length_of_their_wing(self):
+        cfg, pieces = self.l_pieces()
+        a, b = [p for p in pieces if p.role == "roof"]
+        self.assertGreater(a.width, b.width)             # 12.5 against 10
+        self.assertAlmostEqual(a.height, b.height)
+
+    def test_an_l_makes_pdfs(self):
+        for kw in (dict(), dict(roof_type="flat"),
+                   dict(houses=2, mix_pieces=True)):
+            with tempfile.TemporaryDirectory() as tmp, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                files = main.run(make_cfg(
+                    tmp, house_shape="L", textures_enabled=True,
+                    complete_only=False, **kw))
+                self.assertTrue(files[-1].name.endswith("_complete.pdf"))
+                self.assertTrue(all(f.exists() for f in files), kw)
+
+    def test_the_pieces_of_an_l_are_written_one_by_one(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                contextlib.redirect_stdout(io.StringIO()):
+            files = main.run(make_cfg(tmp, house_shape="L",
+                                      complete_only=False))
+        self.assertEqual(len(files), 8 + 1)
+
+    def test_a_wing_must_be_longer_than_the_width(self):
+        for kw in (dict(length_cm=7.5), dict(wing_length_cm=7.5)):
+            with self.assertRaises(ValueError):
+                main.validate(Config(house_shape="L", **kw))
+        main.validate(Config(house_shape="L"))
+        # a short wing does not matter for a rectangle
+        main.validate(Config(wing_length_cm=1.0))
+
+    def test_wrong_shapes_are_refused(self):
+        for kw in (dict(house_shape="T"), dict(roof_type="dome")):
+            with self.assertRaises(ValueError):
+                main.validate(Config(**kw))
+
+    def test_the_error_is_in_the_language(self):
+        with self.assertRaises(ValueError) as error:
+            main.validate(Config(house_shape="L", wing_length_cm=7.5,
+                                 language="it"))
+        self.assertIn("più lunghe", str(error.exception))
+
+    def test_the_wing_counts_as_a_size_in_squares(self):
+        warnings = main.check_dimensions(Config(house_shape="L",
+                                                wing_length_cm=9.0))
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("wing_length_cm", warnings[0])
+        self.assertEqual(main.check_dimensions(Config(wing_length_cm=9.0)), [])
+
+
+class FlatRoofTests(unittest.TestCase):
+
+    def pieces(self, **kw):
+        cfg = Config(roof_type="flat", width_cm=7.5, length_cm=12.5,
+                     height_cm=5.0, **kw)
+        return cfg, main.make_pieces(cfg, "stone", "stone")
+
+    def test_a_flat_roof_is_the_house_plus_a_margin(self):
+        cfg, pieces = self.pieces()
+        roof = pieces[2]
+        self.assertAlmostEqual(roof.width / cm, 12.5 + 2 * cfg.roof_margin_cm)
+        self.assertAlmostEqual(roof.height / cm, 7.5 + 2 * cfg.roof_margin_cm)
+
+    def test_the_short_wall_has_no_gable(self):
+        cfg, pieces = self.pieces()
+        short = pieces[0]
+        self.assertAlmostEqual(short.height / cm, 5.0 + 2)    # tabs, no triangle
+
+    def test_the_margin_changes_the_flat_roof(self):
+        cfg, pieces = self.pieces(roof_margin_cm=2.0)
+        self.assertAlmostEqual(pieces[2].width / cm, 12.5 + 4)
+
+    def test_no_roof_windows_on_a_flat_roof(self):
+        cfg, pieces = self.pieces(roof_windows=True)
+        self.assertEqual([p for p in pieces if p.role == "strip"], [])
+
+    def test_the_paving_marks_every_square(self):
+        c = canvas.Canvas(io.BytesIO())
+        lines = []
+        real_line = c.line
+        c.line = lambda *a: (lines.append(a), real_line(*a))[1]
+        main.paving(c, 10 * cm, 6 * cm, (1 * cm, 1 * cm), 2.5 * cm,
+                    {"base": (0.5, 0.5, 0.5)}, random.Random(1))
+        # lines of the joints plus two lines for each cross
+        self.assertGreater(len(lines), 30)
+
+    def test_the_flat_roof_does_not_change_with_the_roof_pitch(self):
+        a = main.make_pieces(Config(roof_type="flat", roof_height_cm=2.0),
+                             "stone", "stone")[2]
+        b = main.make_pieces(Config(roof_type="flat", roof_height_cm=5.0),
+                             "stone", "stone")[2]
+        self.assertAlmostEqual(a.width, b.width)
+        self.assertAlmostEqual(a.height, b.height)
+
+    def test_it_makes_a_pdf_with_every_material(self):
+        for material in main.ROOF_PALETTES:
+            with tempfile.TemporaryDirectory() as tmp, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                files = main.run(make_cfg(
+                    tmp, roof_type="flat", textures_enabled=True,
+                    roof_material=material))
+                self.assertTrue(files[0].exists(), material)
+
+
+class TabsTests(unittest.TestCase):
+
+    def sizes(self, **kw):
+        cfg = Config(width_cm=7.5, length_cm=12.5, height_cm=7.5,
+                     roof_height_cm=5.0, **kw)
+        short, long_, _ = main.make_pieces(cfg, "stone", "tiles")[:3]
+        return ((short.width / cm, short.height / cm),
+                (long_.width / cm, long_.height / cm))
+
+    def test_tabs_are_on_by_default(self):
+        self.assertTrue(Config().top_bottom_tabs)
+        short, long_ = self.sizes()
+        self.assertEqual(long_, (14.5, 9.5))
+
+    def test_without_the_top_and_bottom_tabs_the_walls_are_smaller(self):
+        (_, short_h), long_ = self.sizes(top_bottom_tabs=False)
+        self.assertEqual(long_, (14.5, 7.5))           # only the inner part
+        self.assertAlmostEqual(short_h, self.sizes()[0][1] - 1.0)
+
+    def test_the_side_tabs_stay(self):
+        (short_w, _), (long_w, _) = self.sizes(top_bottom_tabs=False)
+        self.assertEqual((short_w, long_w), (9.5, 14.5))
+
+    def test_a_flat_roof_wall_loses_both_tabs(self):
+        cfg = Config(roof_type="flat", height_cm=5.0, top_bottom_tabs=False)
+        short = main.make_pieces(cfg, "stone", "stone")[0]
+        self.assertAlmostEqual(short.height / cm, 5.0)
+
+    def test_it_works_with_every_shape(self):
+        for kw in (dict(), dict(roof_type="flat"), dict(house_shape="L"),
+                   dict(house_shape="L", roof_type="flat")):
+            with tempfile.TemporaryDirectory() as tmp, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                files = main.run(make_cfg(tmp, top_bottom_tabs=False,
+                                          textures_enabled=True, **kw))
+                self.assertTrue(files[0].exists(), kw)
+
+
+class NewTextureTests(unittest.TestCase):
+
+    def test_the_new_materials_exist(self):
+        for name in ("marble", "ice"):
+            self.assertIn(name, main.WALL_TEXTURES)
+            self.assertIn(name, main.WALL_PALETTES)
+        for name in ("stone", "blue_tiles"):
+            self.assertIn(name, main.ROOF_TEXTURES)
+            self.assertIn(name, main.ROOF_PALETTES)
+
+    def test_every_wall_texture_draws_something(self):
+        for name, draw in main.WALL_TEXTURES.items():
+            buffer = io.BytesIO()
+            c = canvas.Canvas(buffer, invariant=1)
+            draw(c, 0, 0, 5 * cm, 3 * cm, main.WALL_PALETTES[name],
+                 random.Random(1))
+            c.showPage()
+            c.save()
+            self.assertGreater(len(buffer.getvalue()), 1500, name)
+
+    def test_every_roof_texture_draws_something(self):
+        for name, draw in main.ROOF_TEXTURES.items():
+            buffer = io.BytesIO()
+            c = canvas.Canvas(buffer, invariant=1)
+            draw(c, 5 * cm, 3 * cm, main.ROOF_PALETTES[name],
+                 random.Random(1))
+            c.showPage()
+            c.save()
+            self.assertGreater(len(buffer.getvalue()), 1500, name)
+
+    def test_textures_are_the_same_every_time(self):
+        for name in ("marble", "ice"):
+            outputs = []
+            for _ in range(2):
+                buffer = io.BytesIO()
+                c = canvas.Canvas(buffer, invariant=1)
+                main.WALL_TEXTURES[name](c, 0, 0, 5 * cm, 3 * cm,
+                                         main.WALL_PALETTES[name],
+                                         random.Random(5))
+                c.save()
+                outputs.append(buffer.getvalue())
+            self.assertEqual(outputs[0], outputs[1], name)
+
+    def test_the_materials_are_different_from_each_other(self):
+        outputs = set()
+        for name, draw in main.WALL_TEXTURES.items():
+            buffer = io.BytesIO()
+            c = canvas.Canvas(buffer, invariant=1)
+            draw(c, 0, 0, 5 * cm, 3 * cm, main.WALL_PALETTES[name],
+                 random.Random(1))
+            c.save()
+            outputs.add(buffer.getvalue())
+        self.assertEqual(len(outputs), len(main.WALL_TEXTURES))
+
+    def test_the_command_line_accepts_the_new_materials(self):
+        parsed = main.build_parser().parse_args(
+            ["--wall-material", "ice", "--roof-material", "blue_tiles"])
+        self.assertEqual((parsed.wall_material, parsed.roof_material),
+                         ("ice", "blue_tiles"))
+
+    def test_the_window_picture_accepts_any_number_of_panes(self):
+        for panes in (1, 2, 4, 6):
+            c = canvas.Canvas(io.BytesIO())
+            main.window(c, 2 * cm, 2 * cm, 3 * cm, 1 * cm, panes_x=panes)
+
+
 class ColourTests(unittest.TestCase):
 
     def test_marker_stays_red_on_white(self):
@@ -450,7 +902,7 @@ class ValidationTests(unittest.TestCase):
 
     def test_bad_material_lists_the_options(self):
         with self.assertRaises(ValueError) as error:
-            main.validate(Config(wall_material="marble"))
+            main.validate(Config(wall_material="granite"))
         self.assertIn("brick", str(error.exception))
 
     def test_bad_values(self):
@@ -533,11 +985,9 @@ class OutputTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             files = self.run_quiet(make_cfg(
                 tmp, textures_enabled=True, generate_all_variants=True))
-            self.assertEqual(len(files), 9)
-            files = self.run_quiet(make_cfg(
-                tmp, textures_enabled=True, generate_all_variants=True,
-                complete_only=False))
-            self.assertEqual(len(files), 9 * 4)
+            walls, roofs = len(main.WALL_PALETTES), len(main.ROOF_PALETTES)
+            self.assertEqual((walls, roofs), (5, 5))
+            self.assertEqual(len(files), walls * roofs)
 
     def test_locked_file_gives_a_clear_error(self):
         with tempfile.TemporaryDirectory() as tmp:

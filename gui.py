@@ -76,7 +76,7 @@ GROUP_ORDER = ["House", "Look", "Door & windows", "Pages & output"]
 
 # Settings in cm that the simple view shows in game squares
 SQUARE_LINKS = ("width_cm", "length_cm", "height_cm", "roof_height_cm",
-                "floor_height_cm")
+                "floor_height_cm", "wing_length_cm")
 
 
 # ============================================================
@@ -157,7 +157,14 @@ FULL_HOUSE_ONLY = {
     "generate_all_variants", "houses", "mix_pieces", "allow_rotation",
     "paper", "page_margin_cm", "copy_gap_cm", "calibration_ruler",
     "joint_labels", "one_door_per_house", "door_on", "complete_only",
+    "house_shape", "wing_length_cm", "roof_type", "roof_windows",
 }
+# Only a roof with two slopes has these
+GABLED_ONLY = {
+    "roof_height_cm", "roof_flap_cm", "roof_overhang_cm", "draw_roof_base",
+    "round_window_radius_m", "roof_windows",
+}
+ROOF_WINDOW_SETTINGS = {"roof_window_position", "roof_window_clearance_cm"}
 
 
 def disabled_fields(values):
@@ -182,6 +189,17 @@ def disabled_fields(values):
 
     if not str(values["houses"]).strip():
         off |= {"mix_pieces", "houses_spin"}
+
+    if values["house_shape"] != "L":
+        off.add("wing_length_cm")
+
+    if values["roof_type"] == "flat":
+        off |= GABLED_ONLY
+    if values["house_shape"] == "L":
+        off.add("roof_windows")
+    if (not values["roof_windows"] or values["house_shape"] == "L"
+            or values["roof_type"] == "flat" or not full):
+        off |= ROOF_WINDOW_SETTINGS
 
     return off
 
@@ -357,7 +375,7 @@ def draw_swatch(role, name, base, size=(64, 44)):
                             fill=shade(base, 0.12))
                 x += bw
             y, row = y + bh, row + 1
-    elif name == "stone":
+    elif name == "stone" and role == "wall":
         d.rectangle([0, 0, w, h], fill=(80, 80, 80))
         y = 0
         while y < h:
@@ -370,6 +388,52 @@ def draw_swatch(role, name, base, size=(64, 44)):
                     radius=3 * s, fill=shade(base, 0.15))
                 x += rw
             y += rh
+    elif name == "stone":                       # slabs on a roof
+        d.rectangle([0, 0, w, h], fill=darker(base, 0.42))
+        rh, y = 9 * s, 0
+        while y < h:
+            x = -rnd.randint(0, 10) * s
+            while x < w:
+                sw = rnd.randint(14, 26) * s
+                col = shade(base, 0.14)
+                d.rounded_rectangle(
+                    [x + gap, y + gap, x + sw - gap, y + rh * 1.4],
+                    radius=2 * s, fill=col, outline=darker(col, 0.6),
+                    width=max(1, s // 2))
+                d.line([x + 3 * s, y + gap + s, x + sw - 3 * s, y + gap + s],
+                       fill=darker(col, 0.68), width=s)
+                x += sw
+            y += rh
+    elif name == "marble":
+        d.rectangle([0, 0, w, h], fill=(158, 160, 172))
+        bh, bw, y, row = 12 * s, 26 * s, 0, 0
+        while y < h:
+            x = -(bw // 2) if row % 2 else 0
+            while x < w:
+                d.rectangle([x + gap, y + gap, x + bw - gap, y + bh - gap],
+                            fill=shade(base, 0.03))
+                vx, vy = x + rnd.randint(2, 8) * s, y + rnd.randint(3, 9) * s
+                d.line([vx, vy, vx + 6 * s, vy + rnd.randint(-3, 3) * s,
+                        vx + 13 * s, vy + rnd.randint(-4, 4) * s],
+                       fill=(150, 154, 170), width=max(1, s // 2))
+                x += bw
+            y, row = y + bh, row + 1
+    elif name == "ice":
+        d.rectangle([0, 0, w, h], fill=(102, 166, 214))
+        bh, bw, y, row = 11 * s, 22 * s, 0, 0
+        while y < h:
+            x = -(bw // 2) if row % 2 else 0
+            while x < w:
+                col = shade(base, 0.07)
+                d.rectangle([x + gap, y + gap, x + bw - gap, y + bh - gap],
+                            fill=col)
+                d.rectangle([x + gap, y + gap, x + bw - gap, y + 3 * s],
+                            fill=tuple(min(255, v + 25) for v in col))
+                hx = x + rnd.randint(3, 9) * s
+                d.line([hx, y + 4 * s, hx + 3 * s, y + 9 * s],
+                       fill=(250, 253, 255), width=max(1, s * 2 // 3))
+                x += bw
+            y, row = y + bh, row + 1
     elif name == "wood" and role == "wall":
         ph, y = 11 * s, 0
         while y < h:
@@ -390,7 +454,7 @@ def draw_swatch(role, name, base, size=(64, 44)):
                             fill=shade(base, 0.14))
                 x += tw
             y, row = y + rh, row + 1
-    elif name == "tiles":
+    elif name in ("tiles", "blue_tiles"):
         d.rectangle([0, 0, w, h], fill=darker(base, 0.5))
         rh, tw = 8 * s, 14 * s
         rows, y, row = [], 0, 0
@@ -632,8 +696,8 @@ class App:
         self._linking = False
         self._linking_houses = False
 
-        self.root.geometry(f"{self.px(1080)}x{self.px(800)}")
-        self.root.minsize(self.px(960), self.px(700))
+        self.root.geometry(f"{self.px(1160)}x{self.px(800)}")
+        self.root.minsize(self.px(1000), self.px(700))
         self.root.configure(bg=COLORS["bg"])
         self.root.title(self.t("ui.title"))
         self._set_window_icon()
@@ -744,12 +808,16 @@ class App:
         style.configure("Card.TFrame", background=c["card"])
 
         style.configure("Page.TLabel", background=c["bg"])
+        style.map("Page.TLabel", background=[("disabled", c["bg"])])
         style.configure("Title.Page.TLabel", font=f["title"])
         style.configure("Subtitle.Page.TLabel", foreground=c["muted"])
         style.configure("Section.Page.TLabel", font=f["section"])
         style.configure("Help.Page.TLabel", foreground=c["muted"],
                         font=f["small"])
         style.configure("Card.TLabel", background=c["card"])
+        style.map("Card.TLabel",
+                  background=[("disabled", c["card"])],
+                  foreground=[("disabled", c["muted"])])
         style.configure("Muted.Card.TLabel", foreground=c["muted"],
                         font=f["small"])
         style.configure("CardTitle.Card.TLabel", font=f["card"])
@@ -1147,17 +1215,40 @@ class App:
     def _build_house_page(self):
         body = self._page("house")
         body.columnconfigure(0, weight=1)
-        body.columnconfigure(1, weight=1)
+        body.columnconfigure(1, weight=0)       # as wide as the grid needs
 
-        size = self._card(body, self.t("card.size"), row=0, column=0,
-                          sticky="nsew", padx=(0, 8))
+        # Two columns, each with two cards one under the other
+        left = ttk.Frame(body, style="Page.TFrame")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        left.columnconfigure(0, weight=1)
+        right = ttk.Frame(body, style="Page.TFrame")
+        right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        right.columnconfigure(0, weight=1)
+
+        size = self._card(left, self.t("card.size"), row=0, sticky="new")
         for i, (name, step) in enumerate((("width_cm", 1), ("length_cm", 1),
                                           ("height_cm", 1),
                                           ("roof_height_cm", 0.5))):
             self._square_row(size, i + 1, name, step)
 
-        picker_card = self._card(body, self.t("card.picker"), row=0, column=1,
-                                 sticky="nsew", padx=(8, 0))
+        shape = self._card(left, self.t("card.shape"), row=1, sticky="new")
+        label = ttk.Label(shape, text=self.t("ui.shape"), style="Card.TLabel")
+        label.grid(row=1, column=0, sticky="w", padx=(0, 16), pady=5)
+        self._radios(shape, "house_shape", 1,
+                     [("rectangle", self.t("ui.shape_rect")),
+                      ("L", self.t("ui.shape_l"))])
+        self._reg("house_shape", label)
+        self._square_row(shape, 2, "wing_length_cm", 1)
+        label = ttk.Label(shape, text=self.t("ui.roof_shape"),
+                          style="Card.TLabel")
+        label.grid(row=3, column=0, sticky="w", padx=(0, 16), pady=5)
+        self._radios(shape, "roof_type", 3,
+                     [("gabled", self.t("ui.roof_gabled")),
+                      ("flat", self.t("ui.roof_flat"))])
+        self._reg("roof_type", label)
+
+        picker_card = self._card(right, self.t("card.picker"), row=0,
+                                 sticky="new")
         self.picker = SizePicker(picker_card, self.scale, self.fonts["small"],
                                  self._pick, self._picker_hover)
         self.picker.grid(row=1, column=0, sticky="w")
@@ -1169,8 +1260,7 @@ class App:
         self._reg("width_cm", self.picker)
         self._help(self.t("sub.house"), self.picker)
 
-        amount = self._card(body, self.t("card.amount"), row=1, column=0,
-                            columnspan=2, sticky="new")
+        amount = self._card(right, self.t("card.amount"), row=1, sticky="new")
         check = ttk.Checkbutton(amount, text=self.t("ui.specific_houses"),
                                 variable=self.use_houses,
                                 style="Card.TCheckbutton")
@@ -1179,7 +1269,8 @@ class App:
                            to=99, increment=1, width=6)
         spin.grid(row=1, column=1, sticky="w", padx=(14, 0))
         ttk.Label(amount, text=self.t("ui.houses_hint"),
-                  style="Muted.Card.TLabel").grid(
+                  style="Muted.Card.TLabel", wraplength=self.px(330),
+                  justify="left").grid(
             row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
         self._reg("houses", check)
         self._reg("houses_spin", spin)
@@ -1339,11 +1430,16 @@ class App:
         spin = ttk.Spinbox(windows, textvariable=self.vars["window_spacing_cells"],
                            from_=0.5, to=20, increment=0.5, width=7)
         spin.grid(row=2, column=1, sticky="w", pady=5)
-        ttk.Label(windows, text=self.t("ui.more_in_advanced"),
-                  style="Muted.Card.TLabel").grid(
-            row=3, column=0, columnspan=4, sticky="w", pady=(10, 0))
         self._reg("window_spacing_cells", label, spin)
         self._help(self.describe("window_spacing_cells"), label, spin)
+
+        self._check(windows, "roof_windows", 3, pady=(12, 0))
+        ttk.Label(windows, text=self.t("ui.roof_windows_hint"),
+                  style="Muted.Card.TLabel").grid(
+            row=4, column=0, columnspan=4, sticky="w", padx=(30, 0))
+        ttk.Label(windows, text=self.t("ui.more_in_advanced"),
+                  style="Muted.Card.TLabel").grid(
+            row=5, column=0, columnspan=4, sticky="w", pady=(10, 0))
 
     # ---- Pages and files page ----
 
@@ -1563,7 +1659,8 @@ class App:
             return
         values = {name: self.vars[name].get() for name in (
             "generate_full_house", "textures_enabled", "generate_all_variants",
-            "door_and_windows", "houses")}
+            "door_and_windows", "houses", "house_shape", "roof_type",
+            "roof_windows")}
         off = disabled_fields(values)
 
         for name, widgets in self.widgets.items():

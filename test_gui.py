@@ -76,13 +76,14 @@ class PureFunctionTests(unittest.TestCase):
     def base_values(self, **changes):
         values = dict(generate_full_house=True, textures_enabled=True,
                       generate_all_variants=False, door_and_windows=True,
-                      houses="2")
+                      houses="2", house_shape="rectangle", roof_type="gabled",
+                      roof_windows=True)
         values.update(changes)
         return values
 
     def test_nothing_is_greyed_out_when_everything_applies(self):
         self.assertEqual(gui.disabled_fields(self.base_values()),
-                         {"use_roof"})
+                         {"use_roof", "wing_length_cm"})
 
     def test_mixing_needs_the_number_of_houses(self):
         off = gui.disabled_fields(self.base_values(houses=""))
@@ -108,10 +109,40 @@ class PureFunctionTests(unittest.TestCase):
         self.assertTrue({"length_cm", "houses", "paper", "complete_only"} <= off)
         self.assertNotIn("use_roof", off)
 
+    def test_the_second_wing_needs_an_l(self):
+        self.assertIn("wing_length_cm", gui.disabled_fields(self.base_values()))
+        off = gui.disabled_fields(self.base_values(house_shape="L"))
+        self.assertNotIn("wing_length_cm", off)
+
+    def test_a_flat_roof_has_no_pitch_and_no_roof_windows(self):
+        off = gui.disabled_fields(self.base_values(roof_type="flat"))
+        self.assertTrue({"roof_height_cm", "roof_flap_cm", "roof_overhang_cm",
+                         "round_window_radius_m", "roof_windows",
+                         "roof_window_position"} <= off)
+        self.assertNotIn("roof_margin_cm", off)
+
+    def test_an_l_has_no_roof_windows(self):
+        off = gui.disabled_fields(self.base_values(house_shape="L"))
+        self.assertIn("roof_windows", off)
+        self.assertIn("roof_window_clearance_cm", off)
+
+    def test_the_roof_window_settings_follow_the_switch(self):
+        on = gui.disabled_fields(self.base_values())
+        off = gui.disabled_fields(self.base_values(roof_windows=False))
+        self.assertNotIn("roof_window_position", on)
+        self.assertIn("roof_window_position", off)
+        self.assertNotIn("roof_windows", off)          # the switch itself
+
+    def test_a_single_wall_has_no_shape_or_roof_choice(self):
+        off = gui.disabled_fields(self.base_values(generate_full_house=False))
+        self.assertTrue({"house_shape", "roof_type", "wing_length_cm",
+                         "roof_windows", "roof_window_position"} <= off)
+
     def test_every_greyed_setting_exists(self):
         names = {f.name for f in main.cli_fields()} | {"houses_spin"}
         everything = (gui.DOOR_SETTINGS | gui.TEXTURE_SETTINGS
-                      | gui.FULL_HOUSE_ONLY | {"use_roof", "mix_pieces"})
+                      | gui.FULL_HOUSE_ONLY | gui.GABLED_ONLY
+                      | gui.ROOF_WINDOW_SETTINGS | {"use_roof", "mix_pieces"})
         self.assertEqual(everything - names, set())
 
     def test_sizes_in_squares_are_settings_in_cm(self):
@@ -145,6 +176,18 @@ class DrawingTests(unittest.TestCase):
                 image = gui.draw_swatch(role, name, palette["base"], (64, 44))
                 self.assertEqual(image.size, (64, 44), name)
                 self.assertEqual(image.mode, "RGB")
+
+    def test_the_swatches_of_a_role_are_all_different(self):
+        for field, role in (("wall_material", "wall"),
+                            ("roof_material", "roof")):
+            images = [gui.draw_swatch(role, name, p["base"]).tobytes()
+                      for name, p in PALETTES[field].items()]
+            self.assertEqual(len(set(images)), len(images), role)
+
+    def test_stone_looks_different_on_walls_and_roofs(self):
+        wall = gui.draw_swatch("wall", "stone", (0.5, 0.5, 0.5)).tobytes()
+        roof = gui.draw_swatch("roof", "stone", (0.5, 0.5, 0.5)).tobytes()
+        self.assertNotEqual(wall, roof)
 
     def test_swatches_differ_between_materials(self):
         images = [gui.draw_swatch("wall", name, p["base"]).tobytes()
@@ -192,6 +235,11 @@ class WindowTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.app = self.make_app(language="en", output_dir=self.tmp)
         self.addCleanup(self.close)
+        # The pointer of the virtual screen sits in the middle and would
+        # "hover" over whatever is there: put it in a corner
+        self.app.root.update()
+        self.app.root.event_generate("<Motion>", warp=True, x=2, y=2)
+        self.app.root.update()
 
     def close(self):
         try:
@@ -281,6 +329,7 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(self.app.squares["length_cm"].get(), "5")
         self.assertEqual(self.app.squares["height_cm"].get(), "3")
         self.assertEqual(self.app.squares["roof_height_cm"].get(), "2")
+        self.assertEqual(self.app.squares["wing_length_cm"].get(), "4")
         self.assertEqual(self.app.cm_text["width_cm"].get(), "= 7.5 cm")
 
     def test_typing_squares_changes_the_cm(self):
@@ -604,6 +653,121 @@ class WindowTests(unittest.TestCase):
         self.switch("it")
         self.assertIn("lato corto della casa", self.app.describe("width_cm"))
         self.assertIn("predefinito", self.app.describe("width_cm"))
+
+
+    # ---- shape and roof ----
+
+    def test_the_shape_and_the_roof_are_chosen_on_the_house_page(self):
+        for name, values in (("house_shape", {"rectangle", "L"}),
+                             ("roof_type", {"gabled", "flat"})):
+            radios = [w for w in self.app.widgets[name]
+                      if isinstance(w, gui.ttk.Radiobutton)]
+            self.assertEqual({str(w.cget("value")) for w in radios}, values)
+
+    def test_the_second_wing_is_only_for_an_l(self):
+        self.assertFalse(self.enabled("wing_length_cm"))
+        self.set("house_shape", "L")
+        self.assertTrue(self.enabled("wing_length_cm"))
+        self.app.squares["wing_length_cm"].set("5")
+        cfg, _ = self.app.collect()
+        self.assertEqual((cfg.house_shape, cfg.wing_length_cm), ("L", 12.5))
+
+    def test_a_flat_roof_greys_out_the_pitch(self):
+        self.assertTrue(self.enabled("roof_height_cm"))
+        self.set("roof_type", "flat")
+        self.assertFalse(self.enabled("roof_height_cm"))
+        self.assertFalse(self.enabled("roof_windows"))
+        self.assertTrue(self.enabled("roof_margin_cm"))
+
+    def test_an_l_house_is_generated_from_the_window(self):
+        self.set("house_shape", "L")
+        self.app.start()
+        self.wait()
+        self.assertEqual(self.errors, [])
+        self.assertIn("Done: 1 PDF files", self.app.log.get("1.0", "end"))
+        self.assertIn("roof A", self.app.log.get("1.0", "end"))
+
+    def test_a_short_wing_is_explained(self):
+        self.set("house_shape", "L")
+        self.app.squares["wing_length_cm"].set("2")
+        self.app.start()
+        self.assertEqual(len(self.errors), 1)
+        self.assertIn("wings", self.errors[0][1])
+
+    # ---- roof windows ----
+
+    def test_roof_windows_are_on_the_doors_page(self):
+        widgets = self.app.widgets["roof_windows"]
+        self.assertGreaterEqual(len(widgets), 2)          # here and in Advanced
+        doors = str(self.app.pages["doors"])
+        self.assertTrue(any(str(w).startswith(doors) for w in widgets))
+
+    def test_the_extra_roof_window_settings_are_only_in_advanced(self):
+        advanced = str(self.app.pages["advanced"])
+        for name in ("roof_window_position", "roof_window_clearance_cm"):
+            widgets = self.app.widgets[name]
+            self.assertTrue(all(str(w).startswith(advanced) for w in widgets))
+
+    def test_the_roof_window_settings_follow_the_switch(self):
+        self.assertFalse(self.enabled("roof_window_position"))
+        self.set("roof_windows", True)
+        self.assertTrue(self.enabled("roof_window_position"))
+        self.set("house_shape", "L")
+        self.assertFalse(self.enabled("roof_windows"))
+        self.assertFalse(self.enabled("roof_window_position"))
+
+    def test_roof_windows_make_the_strips(self):
+        self.set("roof_windows", True)
+        self.app.start()
+        self.wait()
+        self.assertIn("roof window strip", self.app.log.get("1.0", "end"))
+
+    def test_roof_windows_in_italian(self):
+        self.switch("it")
+        self.assertEqual(self.app.label_for("roof_windows"),
+                         "Finestre sul tetto")
+        self.set("roof_windows", True)
+        self.app.start()
+        self.wait()
+        self.assertIn("striscia delle finestre del tetto",
+                      self.app.log.get("1.0", "end"))
+
+    # ---- materials ----
+
+    def test_there_is_a_picture_for_every_material(self):
+        counts = {f: len(b) for f, b in self.app.swatch_buttons.items()}
+        self.assertEqual(counts, {"wall_material": 5, "roof_material": 5})
+        names = {str(b.cget("text")) for b in
+                 self.app.swatch_buttons["wall_material"]}
+        self.assertEqual(names, {"Brick", "Stone", "Wood", "Marble", "Ice"})
+        names = {str(b.cget("text")) for b in
+                 self.app.swatch_buttons["roof_material"]}
+        self.assertEqual(names, {"Tiles", "Blue tiles", "Wood", "Thatch",
+                                 "Stone"})
+
+    def test_the_materials_have_italian_names(self):
+        self.switch("it")
+        names = {str(b.cget("text")) for b in
+                 self.app.swatch_buttons["wall_material"]}
+        self.assertEqual(names, {"Mattoni", "Pietra", "Legno", "Marmo",
+                                 "Ghiaccio"})
+
+    def test_a_new_material_can_be_chosen_and_used(self):
+        self.set("textures_enabled", True)
+        self.set("wall_material", "ice")
+        self.set("roof_material", "blue_tiles")
+        self.app.start()
+        self.wait()
+        self.assertEqual(self.errors, [])
+
+    # ---- the tabs ----
+
+    def test_the_tabs_option_is_in_advanced(self):
+        advanced = str(self.app.pages["advanced"])
+        widgets = self.app.widgets["top_bottom_tabs"]
+        self.assertTrue(all(str(w).startswith(advanced) for w in widgets))
+        self.set("top_bottom_tabs", False)
+        self.assertFalse(self.app.collect()[0].top_bottom_tabs)
 
     # ---- pages ----
 

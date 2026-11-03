@@ -14,7 +14,7 @@ import argparse
 import math
 import random
 import sys
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -59,6 +59,18 @@ class Config:
     roof_margin_cm: float = _f(
         1.0, "extra margin added on every side of the roof sheet")
     use_roof: bool = _f(True, "single-wall mode only: draw the roof gable")
+    house_shape: str = _f(
+        "rectangle", "shape of the house: a rectangle, or an L made of "
+                     "two wings", choices=["rectangle", "L"])
+    wing_length_cm: float = _f(
+        10.0, "L shape only: total length of the second wing, measured "
+              "along the outside of the house")
+    roof_type: str = _f(
+        "gabled", "shape of the roof: gabled (two slopes) or flat",
+        choices=["gabled", "flat"])
+    top_bottom_tabs: bool = _f(
+        True, "print the tabs at the top and at the bottom of the walls "
+              "(the side tabs are always printed)")
 
     # --- Look: lines and textures ---
     textures_enabled: bool = _f(
@@ -119,9 +131,12 @@ class Config:
         2.0, "target distance between windows, in game squares "
              "(lower: more windows)", group="Door & windows")
     roof_windows: bool = _f(
-        False, "cut flat windows into the roof, across the ridge, where "
-               "miniatures can stand (each gets a strip of paper that "
-               "supports it)", group="Door & windows")
+        False, "cut flat windows into the roof, halfway down each slope, "
+               "where miniatures can stand (a strip of paper under them "
+               "is the wall and the support)", group="Door & windows")
+    roof_window_position: float = _f(
+        0.5, "where a roof window sits on the slope, from 0 (at the ridge) "
+             "to 1 (at the eaves); 0.5 is halfway", group="Door & windows")
     roof_window_clearance_cm: float = _f(
         0.1, "extra room around a roof window, on every side, so that the "
              "strip fits easily", group="Door & windows")
@@ -273,10 +288,19 @@ def validate(cfg):
                         value=cfg.paper))
     if cfg.houses is not None and cfg.houses < 1:
         errors.append(t("err.houses", value=cfg.houses))
+    if cfg.house_shape not in ("rectangle", "L"):
+        errors.append(t("err.house_shape", value=cfg.house_shape))
+    if cfg.roof_type not in ("gabled", "flat"):
+        errors.append(t("err.roof_type", value=cfg.roof_type))
+    if cfg.house_shape == "L" and (
+            cfg.length_cm <= cfg.width_cm + 0.01
+            or cfg.wing_length_cm <= cfg.width_cm + 0.01):
+        errors.append(t("err.wing_short"))
 
     for name in ("width_cm", "length_cm", "height_cm", "tab_width_cm",
                  "roof_height_cm", "cell_cm", "meters_per_cell",
-                 "floor_height_cm", "window_spacing_cells"):
+                 "floor_height_cm", "window_spacing_cells",
+                 "wing_length_cm"):
         if getattr(cfg, name) <= 0:
             errors.append(t("err.positive", name=name,
                             value=getattr(cfg, name)))
@@ -311,15 +335,9 @@ def check_settings(cfg):
     if cfg.roof_windows:
         plan = roof_window_plan(cfg)
         if not plan.runs:
-            reasons = {
-                "short": "the house must be at least 3 squares long",
-                "narrow": "the roof is too narrow for a window one "
-                          "square deep on each side",
-            }
-            warnings.append(tr_or(
-                cfg.language, "msg.warn_roof_windows",
-                "WARNING: roof_windows has no effect: {reason}.",
-                reason=reasons.get(plan.reason, plan.reason)))
+            warnings.append(tr(cfg.language, "msg.warn_roof_windows",
+                               reason=tr(cfg.language,
+                                         f"msg.rw_{plan.reason}")))
     return warnings
 
 
@@ -329,6 +347,8 @@ def check_dimensions(cfg):
     dimensions = [("width_cm", cfg.width_cm), ("height_cm", cfg.height_cm)]
     if cfg.generate_full_house:
         dimensions.append(("length_cm", cfg.length_cm))
+        if cfg.house_shape == "L":
+            dimensions.append(("wing_length_cm", cfg.wing_length_cm))
 
     warnings = []
     for name, value in dimensions:
@@ -470,6 +490,115 @@ def texture_wood_wall(c, x0, y0, x1, y1, pal, rnd):
         y += plank_height
 
 
+@wall_texture("marble", base=(0.93, 0.92, 0.90), mortar=(0.62, 0.63, 0.68))
+def texture_marble(c, x0, y0, x1, y1, pal, rnd):
+    """Big blocks of white marble with grey veins."""
+    c.setFillColorRGB(*pal["mortar"])
+    c.rect(x0, y0, x1 - x0, y1 - y0, stroke=0, fill=1)
+
+    bw = 1.7 * cm
+    bh = 0.8 * cm
+    gap = 0.05 * cm
+
+    row = 0
+    y = y0
+    while y < y1:
+        x = x0 - (bw / 2 if row % 2 else 0)
+        while x < x1:
+            # A slightly warm or cool white for every block
+            shift = rnd.uniform(-0.03, 0.03)
+            col = (min(1.0, pal["base"][0] + shift),
+                   min(1.0, pal["base"][1] + shift * 0.5),
+                   min(1.0, pal["base"][2] - shift * 0.6))
+
+            c.saveState()
+            area = c.beginPath()
+            area.rect(x + gap / 2, y + gap / 2, bw - gap, bh - gap)
+            c.clipPath(area, stroke=0, fill=0)
+            c.setFillColorRGB(*col)
+            c.rect(x, y, bw, bh, stroke=0, fill=1)
+
+            # Veins: thin wandering lines, darker and lighter
+            for k in range(rnd.randint(1, 3)):
+                vx = x + rnd.uniform(0.0, 0.4) * bw
+                vy = y + rnd.uniform(0.1, 0.9) * bh
+                dark = k % 2 == 0
+                c.setStrokeColorRGB(*((0.58, 0.60, 0.67) if dark
+                                      else (0.80, 0.81, 0.86)))
+                c.setLineWidth(rnd.uniform(0.25, 0.65) if dark else 0.9)
+                c.bezier(vx, vy,
+                         vx + 0.20 * bw, vy + rnd.uniform(-0.4, 0.4) * bh,
+                         vx + 0.45 * bw, vy + rnd.uniform(-0.5, 0.5) * bh,
+                         vx + rnd.uniform(0.6, 1.0) * bw,
+                         vy + rnd.uniform(-0.4, 0.4) * bh)
+            c.restoreState()
+            x += bw
+        y += bh
+        row += 1
+
+
+@wall_texture("ice", base=(0.70, 0.88, 0.97), mortar=(0.40, 0.65, 0.84))
+def texture_ice(c, x0, y0, x1, y1, pal, rnd):
+    """Blocks of blue ice with white highlights and cracks."""
+    c.setFillColorRGB(*pal["mortar"])
+    c.rect(x0, y0, x1 - x0, y1 - y0, stroke=0, fill=1)
+
+    bw = 1.3 * cm
+    bh = 0.7 * cm
+    gap = 0.05 * cm
+
+    row = 0
+    y = y0
+    while y < y1:
+        x = x0 - (bw / 2 if row % 2 else 0)
+        while x < x1:
+            col = vary(pal["base"], rnd, 0.07)
+
+            c.saveState()
+            area = c.beginPath()
+            area.rect(x + gap / 2, y + gap / 2, bw - gap, bh - gap)
+            c.clipPath(area, stroke=0, fill=0)
+            c.setFillColorRGB(*col)
+            c.rect(x, y, bw, bh, stroke=0, fill=1)
+
+            # Paler band along the top, like light on the edge
+            c.setFillColorRGB(*[min(1.0, v + 0.10) for v in col])
+            c.rect(x, y + bh * 0.72, bw, bh * 0.28, stroke=0, fill=1)
+
+            # Two diagonal highlights
+            c.setStrokeColorRGB(0.97, 0.99, 1.0)
+            c.setLineWidth(0.8)
+            hx = x + bw * rnd.uniform(0.12, 0.45)
+            c.line(hx, y + bh * 0.2, hx + bw * 0.14, y + bh * 0.62)
+            c.setLineWidth(0.5)
+            c.line(hx + bw * 0.2, y + bh * 0.2, hx + bw * 0.28, y + bh * 0.46)
+
+            # Sparkles
+            c.setFillColorRGB(1, 1, 1)
+            for _ in range(rnd.randint(1, 3)):
+                c.circle(x + rnd.uniform(0.1, 0.9) * bw,
+                         y + rnd.uniform(0.15, 0.85) * bh,
+                         rnd.uniform(0.012, 0.03) * cm, stroke=0, fill=1)
+
+            # A crack in some of the blocks
+            if rnd.random() < 0.35:
+                c.setStrokeColorRGB(0.93, 0.98, 1.0)
+                c.setLineWidth(0.45)
+                px = x + rnd.uniform(0.4, 0.9) * bw
+                py = y + bh
+                p = c.beginPath()
+                p.moveTo(px, py)
+                for _ in range(3):
+                    px += rnd.uniform(-0.12, 0.12) * bw
+                    py -= bh * rnd.uniform(0.2, 0.35)
+                    p.lineTo(px, py)
+                c.drawPath(p, stroke=1, fill=0)
+            c.restoreState()
+            x += bw
+        y += bh
+        row += 1
+
+
 # ============================================================
 # ROOF TEXTURES
 # Drawn in a local system where the eaves are at y = 0
@@ -533,6 +662,7 @@ def _element_rows(c, w, d, pal, rnd, tw, rh, length, curved, amplitude):
         row += 1
 
 
+@roof_texture("blue_tiles", base=(0.20, 0.41, 0.72))
 @roof_texture("tiles", base=(0.78, 0.38, 0.20))
 def texture_roof_tiles(c, w, d, pal, rnd):
     _element_rows(c, w, d, pal, rnd,
@@ -584,6 +714,42 @@ def texture_roof_thatch(c, w, d, pal, rnd):
         row += 1
 
 
+@roof_texture("stone", base=(0.50, 0.52, 0.55))
+def texture_roof_stone(c, w, d, pal, rnd):
+    """Slabs of grey stone, in rows, each row a little over the one below."""
+    c.setFillColorRGB(*darken(pal["base"], 0.42))
+    c.rect(0, 0, w, d, stroke=0, fill=1)
+
+    rh = 0.75 * cm
+    row = 0
+    while row * rh < d:
+        yb = row * rh
+        x = -rnd.uniform(0.0, 1.2) * cm
+        while x < w:
+            sw = rnd.uniform(1.0, 1.9) * cm
+            col = vary(pal["base"], rnd, 0.14)
+
+            c.setFillColorRGB(*col)
+            c.setStrokeColorRGB(*darken(col, 0.55))
+            c.setLineWidth(0.4)
+            c.roundRect(x, yb, sw, rh * 1.35, 0.12 * cm, stroke=1, fill=1)
+
+            # Shadow under the edge of the slab
+            c.setStrokeColorRGB(*darken(col, 0.68))
+            c.setLineWidth(0.8)
+            c.line(x + 0.1 * cm, yb + 0.05 * cm, x + sw - 0.1 * cm,
+                   yb + 0.05 * cm)
+
+            # Small marks on the stone
+            c.setFillColorRGB(*darken(col, 0.8))
+            for _ in range(rnd.randint(1, 3)):
+                c.circle(x + rnd.uniform(0.15, 0.85) * sw,
+                         yb + rnd.uniform(0.35, 1.1) * rh,
+                         rnd.uniform(0.01, 0.03) * cm, stroke=0, fill=1)
+            x += sw
+        row += 1
+
+
 # ============================================================
 # DOOR AND WINDOWS
 # ============================================================
@@ -596,7 +762,10 @@ def _glint(c, x0, y0, x1, y1):
     c.line(x0 + 0.18 * pw, y0 + 0.55 * ph, x0 + 0.42 * pw, y0 + 0.85 * ph)
 
 
-def window(c, cx, cy, w, h):
+def window(c, cx, cy, w, h, panes_x=2):
+    """A window with a frame, a sill and glass. `panes_x` is the number of
+    panes side by side (2 for the usual one, more for a long low window);
+    there are always two rows of panes."""
     f = WINDOW_FRAME_CM * cm
 
     # Sill, wider than the window
@@ -616,15 +785,17 @@ def window(c, cx, cy, w, h):
     c.setFillColorRGB(*GLASS)
     c.rect(gx0, gy0, gx1 - gx0, gy1 - gy0, stroke=0, fill=1)
 
-    # Highlights in each of the four panes
-    for px0, px1 in ((gx0, cx), (cx, gx1)):
+    # Highlights in every pane
+    columns = [gx0 + (gx1 - gx0) * i / panes_x for i in range(panes_x + 1)]
+    for px0, px1 in zip(columns, columns[1:]):
         for py0, py1 in ((gy0, cy), (cy, gy1)):
             _glint(c, px0, py0, px1, py1)
 
-    # Cross
+    # Bars between the panes
     c.setStrokeColorRGB(*FRAME)
     c.setLineWidth(1.3)
-    c.line(cx, cy - h / 2, cx, cy + h / 2)
+    for x in [cx - w / 2 + w * i / panes_x for i in range(1, panes_x)]:
+        c.line(x, cy - h / 2, x, cy + h / 2)
     c.line(cx - w / 2, cy, cx + w / 2, cy)
 
 
@@ -846,22 +1017,29 @@ def slope_side_cm(cfg, inner_width_cm):
 # ROOF WINDOWS
 #
 # A roof window is a flat spot on the roof where a miniature can stand.
-# At the ridge, a rectangle is cut out of the roof on both slopes. The
-# piece that is cut out is laid flat on top of a strip of paper folded
-# into a rectangle: the strip is the wall under it and the support.
+# On each slope, halfway between the ridge and the eaves, a rectangle is
+# cut on three sides; the fourth side, the one towards the ridge, stays
+# as a fold. The flap is lifted until it is flat and rests on a strip of
+# paper folded into a rectangle: the strip is the wall under the flap
+# and its support. It goes from the window on one slope to the window on
+# the other, under the part of the roof near the ridge that is left whole.
 #
-#           flat top (the piece cut out of the roof)
-#        ________________________________          <- at the height of the ridge
-#       |                                |
-#       | strip (wall)        strip      |  h
-#   \___|                                |___/    <- the two slopes
-#        |<-- a -->|<-- a -->|
-#                  ridge
+#                         ridge
+#                         /\
+#        flap, flat      /  \      flap, flat
+#      ________________ /    \ ________________    <- both at the same height
+#     |  strip (wall)  |      |  strip (wall)  |
+#  ___|                |  g   |                |___ <- the two slopes
+#     |<--- c --->|    |<2g-->|    |<--- c --->|
 #
-#   a = one square + a little room, measured horizontally from the ridge
-#   (the "2.6 cm" leg of the right triangle)
-#   hypotenuse = a / cos(roof angle): the same distance measured along the slope
-#   h = sqrt(hypotenuse^2 - a^2): the height of the strip
+#   c = one square + a little room, measured flat (the "2.6 cm" leg of the
+#       right triangle)
+#   g = distance, measured flat, from the ridge to the fold of the flap;
+#       the window is halfway: g = (half the width - c) / 2
+#   hypotenuse = c / cos(roof angle): the same distance along the slope,
+#       which is how deep the cut is
+#   h = sqrt(hypotenuse^2 - c^2): the height of the strip
+#   the strip is 2 * (g + c) long, and as wide as the window
 # ============================================================
 
 def roof_window_runs(squares):
@@ -900,9 +1078,11 @@ def roof_window_runs(squares):
 class RoofWindowPlan:
     runs: tuple = ()               # ((first square, squares), ...)
     holes: tuple = ()              # ((x0, x1), ...) in cm, on the roof sheet
-    hypotenuse_cm: float = 0.0     # each half of a hole, along the slope
+    hinge_cm: float = 0.0          # along the slope: ridge to the fold
+    hypotenuse_cm: float = 0.0     # along the slope: depth of the cut
     wall_height_cm: float = 0.0    # height of the strip
-    ring_across_cm: float = 0.0    # length of the strip across the roof
+    ring_across_cm: float = 0.0    # length of the strip, across the roof
+    gap_cm: float = 0.0            # between the two windows, measured flat
     reason: str = ""               # why there are no windows
 
 
@@ -910,21 +1090,29 @@ def roof_window_plan(cfg):
     """Sizes and places of the roof windows, or an empty plan."""
     if not cfg.roof_windows:
         return RoofWindowPlan(reason="off")
+    if cfg.house_shape != "rectangle" or cfg.roof_type != "gabled":
+        return RoofWindowPlan(reason="shape")
 
     cell = cfg.cell_cm
     clearance = max(0.0, cfg.roof_window_clearance_cm)
     half = cfg.width_cm / 2
-    a = cell + clearance
+    c = cell + clearance                              # flat depth of a window
 
     squares = int(cfg.length_cm / cell + 1e-6)
     if squares < 3:
         return RoofWindowPlan(reason="short")
-    if a > half - 0.3:
+    free = half - c                                   # flat room on a slope
+    if free < 0.3:
         return RoofWindowPlan(reason="narrow")
 
+    position = min(1.0, max(0.0, cfg.roof_window_position))
+    g = position * free                               # ridge to the fold, flat
+
     side = slope_side_cm(cfg, cfg.width_cm)
-    hypotenuse = a * side / half                      # along the slope
-    height = math.sqrt(hypotenuse ** 2 - a ** 2)      # Pythagoras
+    cos = half / side
+    hinge = g / cos                                   # the same, on the slope
+    hypotenuse = c / cos
+    height = math.sqrt(hypotenuse ** 2 - c ** 2)      # Pythagoras
 
     runs = roof_window_runs(squares)
     offset = (cfg.length_cm - squares * cell) / 2
@@ -933,7 +1121,8 @@ def roof_window_plan(cfg):
                    start + (first + count) * cell + clearance)
                   for first, count in runs)
 
-    return RoofWindowPlan(tuple(runs), holes, hypotenuse, height, 2 * cell)
+    return RoofWindowPlan(tuple(runs), holes, hinge, hypotenuse, height,
+                          2 * (g + c), 2 * g)
 
 
 # ============================================================
@@ -957,6 +1146,8 @@ class Piece:
     outline: Callable
     has_door: bool = False
     per_house: int = 1          # copies needed for one house
+    suffix: str = ""            # tells apart pieces of the same role: " 3"
+    joints: Optional[tuple] = None   # fixed corner letters (left, right)
 
 
 @dataclass(frozen=True)
@@ -993,15 +1184,20 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
     ROOF_H = cfg.roof_height_cm * cm
     FLAP = cfg.roof_flap_cm * cm
 
+    # The tabs at the bottom and at the top can be left out (a wall with
+    # a roof gable has no tab at the top anyway)
+    bottom_tab = B if cfg.top_bottom_tabs else 0
+    top_tab = B if cfg.top_bottom_tabs and not with_roof else 0
+
     # Size of the outer rectangle (inner + tabs)
     W = width_cm * cm + 2 * B
-    H = height_cm * cm + 2 * B
+    H = height_cm * cm + bottom_tab + top_tab
 
     # Inner rectangle
     x1 = B
     x2 = W - B
-    y1 = B
-    y2 = H - B
+    y1 = bottom_tab
+    y2 = y1 + height_cm * cm
 
     # --------------------------------------------------------
     # Roof geometry and bounding box size
@@ -1058,10 +1254,11 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
 
         # Base colour: central band (side tabs + inner rectangle) and
         # bottom tab (and top tab without roof). Corners stay white.
-        if with_roof:
-            zones = [(x1, 0, x2, y1), (0, y1, W, y2)]
-        else:
-            zones = [(x1, 0, x2, H), (0, y1, W, y2)]
+        zones = [(0, y1, W, y2)]
+        if bottom_tab:
+            zones.append((x1, 0, x2, y1))
+        if top_tab:
+            zones.append((x1, y2, x2, H))
 
         for xa, ya, xb, yb in zones:
             fill_path(c, polygon(c, [(xa, ya), (xb, ya),
@@ -1128,35 +1325,28 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
         # shape: the corners between two tabs are removed.
         c.setDash(*cfg.dash)
 
+        bottom_path = ([(0, y1), (x1, y1), (x1, 0), (x2, 0), (x2, y1),
+                        (W, y1)] if bottom_tab else [(0, 0), (W, 0)])
+
         p = c.beginPath()
         if with_roof:
             # No top edge: the roof is there
-            p.moveTo(0, y2)
-            p.lineTo(0, y1)
-            p.lineTo(x1, y1)
-            p.lineTo(x1, 0)
-            p.lineTo(x2, 0)
-            p.lineTo(x2, y1)
-            p.lineTo(W, y1)
-            p.lineTo(W, y2)
+            points = [(0, y2)] + bottom_path + [(W, y2)]
+            p.moveTo(*points[0])
+            for point in points[1:]:
+                p.lineTo(*point)
             c.drawPath(p, stroke=1, fill=0)
 
             # Top side of the side tabs
             c.line(0, y2, x1, y2)
             c.line(x2, y2, W, y2)
         else:
-            p.moveTo(x1, H)
-            p.lineTo(x1, y2)
-            p.lineTo(0, y2)
-            p.lineTo(0, y1)
-            p.lineTo(x1, y1)
-            p.lineTo(x1, 0)
-            p.lineTo(x2, 0)
-            p.lineTo(x2, y1)
-            p.lineTo(W, y1)
-            p.lineTo(W, y2)
-            p.lineTo(x2, y2)
-            p.lineTo(x2, H)
+            top_path = ([(W, y2), (x2, y2), (x2, H), (x1, H), (x1, y2),
+                         (0, y2)] if top_tab else [(W, y2), (0, y2)])
+            points = bottom_path + top_path
+            p.moveTo(*points[0])
+            for point in points[1:]:
+                p.lineTo(*point)
             p.close()
             c.drawPath(p, stroke=1, fill=0)
 
@@ -1279,23 +1469,29 @@ def roof_piece(cfg, material, seed_id):
         c.setDash(*cfg.dash)
         c.rect(0, 0, Wr, Hr, stroke=1, fill=0)
 
-        # Ridge (fold), in the middle. It is not drawn through the roof
-        # windows: the piece cut out there lies flat
+        # Ridge (fold), in the middle
         c.setDash()
-        edges = [0.0]
-        for x0, x1 in plan.holes:
-            edges += [x0 * cm, x1 * cm]
-        edges.append(Wr)
-        for i in range(0, len(edges), 2):
-            c.line(edges[i], Hr / 2, edges[i + 1], Hr / 2)
+        c.line(0, Hr / 2, Wr, Hr / 2)
 
-        # Roof windows (cut): across the ridge, on both slopes
-        if plan.holes:
-            c.setDash(*cfg.dash)
-            half_depth = plan.hypotenuse_cm * cm
-            for x0, x1 in plan.holes:
-                c.rect(x0 * cm, Hr / 2 - half_depth, (x1 - x0) * cm,
-                       2 * half_depth, stroke=1, fill=0)
+        # Roof windows: on each slope a flap, cut on three sides and
+        # folded on the side towards the ridge
+        hinge = plan.hinge_cm * cm
+        depth = plan.hypotenuse_cm * cm
+        for x0, x1 in plan.holes:
+            for sign in (-1, 1):                    # lower and upper slope
+                y_fold = Hr / 2 + sign * hinge
+                y_far = Hr / 2 + sign * (hinge + depth)
+
+                c.setDash(*cfg.dash)
+                p = c.beginPath()
+                p.moveTo(x0 * cm, y_fold)
+                p.lineTo(x0 * cm, y_far)
+                p.lineTo(x1 * cm, y_far)
+                p.lineTo(x1 * cm, y_fold)
+                c.drawPath(p, stroke=1, fill=0)
+
+                c.setDash()
+                c.line(x0 * cm, y_fold, x1 * cm, y_fold)
 
         c.restoreState()
 
@@ -1303,18 +1499,19 @@ def roof_piece(cfg, material, seed_id):
 
 
 def strip_piece(cfg, material, squares, count, plan, seed_id):
-    """The strip of paper under a roof window: folded into a rectangle,
-    it is the wall under the flat top and its support.
+    """The strip of paper under the roof windows: folded into a rectangle,
+    it is the wall under the flaps and their support.
 
-    It has two sides as long as the window (`squares` squares) and two
-    sides as long as the distance between the two walls of the window,
-    across the roof. Its height is the other leg of the right triangle:
-    see the notes on roof windows above.
+    Two sides are as long as the window (`squares` squares) and are the
+    walls that face outside: they get the picture of a window. The other
+    two go from one window to the other, under the part of the roof near
+    the ridge. The height is the other leg of the right triangle: see the
+    notes on roof windows above.
 
-      +-----------+-------------------+-----------+-------------------+-+
-      | window    | across the roof   | window    | across the roof   |g|
-      | length    |                   | length    |                   |l|
-      +-----------+-------------------+-----------+-------------------+-+
+      +-----------+---------------------+-----------+---------------------+-+
+      | window    | from one window to  | window    | from one window to  |g|
+      | (outside) | the other           | (outside) | the other           |l|
+      +-----------+---------------------+-----------+---------------------+-+
          solid lines = folds, dashed = cuts, g = glue tab
     """
     along = squares * cfg.cell_cm * cm
@@ -1352,6 +1549,16 @@ def strip_piece(cfg, material, squares, count, plan, seed_id):
             WALL_TEXTURES[material](c, x0, 0, x1, height, palette, rnd)
             c.restoreState()
 
+        # A window on the two sides that face outside: lower and longer
+        # than the ones of the walls
+        if cfg.door_and_windows and height >= 0.7 * cm:
+            for x0, x1 in ((edges[0], edges[1]), (edges[2], edges[3])):
+                face = x1 - x0
+                w = face * 0.72
+                panes = max(2, round(w / (1.0 * cm)))
+                window(c, (x0 + x1) / 2, height * 0.56, w, height * 0.58,
+                       panes_x=panes)
+
         c.restoreState()
 
     def outline(c, labels=None):
@@ -1379,15 +1586,309 @@ def strip_piece(cfg, material, squares, count, plan, seed_id):
                  outline, per_house=count)
 
 
+def offset_polygon(points, margin):
+    """A polygon with only right angles, moved outwards by `margin`.
+    The points go counter-clockwise."""
+    n = len(points)
+    result = []
+    for i in range(n):
+        px, py = points[i - 1]
+        x, y = points[i]
+        nx_, ny_ = points[(i + 1) % n]
+
+        def outward(ax, ay, bx, by):
+            length = math.hypot(bx - ax, by - ay)
+            dx, dy = (bx - ax) / length, (by - ay) / length
+            return dy, -dx                      # the right of the direction
+
+        a1, a2 = outward(px, py, x, y)
+        b1, b2 = outward(x, y, nx_, ny_)
+        result.append((x + margin * (a1 + b1), y + margin * (a2 + b2)))
+    return result
+
+
+def paving(c, w, h, origin, cell, pal, rnd):
+    """Floor tiles, two to a side of a game square, with the squares of the
+    game marked: a thicker joint along every square and a small cross at
+    every corner. `origin` is where the squares start."""
+    ox, oy = origin
+    tile = cell / 2
+    gap = 0.045 * cm
+
+    grout = darken(pal["base"], 0.55)
+    c.setFillColorRGB(*grout)
+    c.rect(0, 0, w, h, stroke=0, fill=1)
+
+    for ix in range(math.floor(-ox / tile), math.ceil((w - ox) / tile)):
+        for iy in range(math.floor(-oy / tile), math.ceil((h - oy) / tile)):
+            x = ox + ix * tile
+            y = oy + iy * tile
+
+            # The squares of the game are slightly lighter and darker, like
+            # a chess board, so they can be seen at a glance
+            checker = (ix // 2 + iy // 2) % 2
+            col = vary(darken(pal["base"], 1.05 if checker else 0.94), rnd,
+                       0.05)
+            c.setFillColorRGB(*col)
+            c.rect(x + gap / 2, y + gap / 2, tile - gap, tile - gap,
+                   stroke=0, fill=1)
+
+            # A small chip on some tiles
+            if rnd.random() < 0.25:
+                c.setFillColorRGB(*darken(col, 0.82))
+                c.circle(x + rnd.uniform(0.2, 0.8) * tile,
+                         y + rnd.uniform(0.2, 0.8) * tile,
+                         rnd.uniform(0.012, 0.03) * cm, stroke=0, fill=1)
+
+    # Thicker joint along the squares of the game
+    c.setStrokeColorRGB(*darken(pal["base"], 0.42))
+    c.setLineWidth(1.3)
+    xs = [ox + i * cell for i in range(math.floor(-ox / cell),
+                                       math.ceil((w - ox) / cell) + 1)]
+    ys = [oy + i * cell for i in range(math.floor(-oy / cell),
+                                       math.ceil((h - oy) / cell) + 1)]
+    for x in xs:
+        c.line(x, 0, x, h)
+    for y in ys:
+        c.line(0, y, w, y)
+
+    # A cross at every corner of a square
+    c.setStrokeColorRGB(*[min(1.0, v + 0.35) for v in pal["base"]])
+    c.setLineWidth(0.9)
+    arm = 0.16 * cm
+    for x in xs:
+        for y in ys:
+            c.line(x - arm, y, x + arm, y)
+            c.line(x, y - arm, x, y + arm)
+
+
+def flat_roof_piece(cfg, material, footprint_cm, seed_id, suffix=""):
+    """A flat roof: one sheet shaped like the house, with a margin all
+    around, paved with tiles that show the squares of the game."""
+    margin = cfg.roof_margin_cm
+    outline_cm = offset_polygon(footprint_cm, margin)
+    min_x = min(x for x, _ in outline_cm)
+    min_y = min(y for _, y in outline_cm)
+    max_x = max(x for x, _ in outline_cm)
+    max_y = max(y for _, y in outline_cm)
+
+    shape = [((x - min_x) * cm, (y - min_y) * cm) for x, y in outline_cm]
+    house_corner = ((footprint_cm[0][0] - min_x) * cm,
+                    (footprint_cm[0][1] - min_y) * cm)
+    width, height = (max_x - min_x) * cm, (max_y - min_y) * cm
+
+    palette = ROOF_PALETTES[material] if cfg.textures_enabled else None
+
+    def body(c, door_present=True):
+        if palette is None:
+            return
+
+        c.saveState()
+        rnd = random.Random(f"{cfg.seed}/{seed_id}/{material}")
+        fill_path(c, polygon(c, shape), palette["base"])
+
+        area = c.beginPath()
+        area.moveTo(*shape[0])
+        for point in shape[1:]:
+            area.lineTo(*point)
+        area.close()
+        c.clipPath(area, stroke=0, fill=0)
+        paving(c, width, height, house_corner, cfg.cell_cm * cm, palette, rnd)
+        c.restoreState()
+
+    def outline(c, labels=None):
+        c.saveState()
+        c.setStrokeColorRGB(*cfg.line_color)
+        c.setLineWidth(cfg.line_width)
+        c.setDash(*cfg.dash)
+        p = c.beginPath()
+        p.moveTo(*shape[0])
+        for point in shape[1:]:
+            p.lineTo(*point)
+        p.close()
+        c.drawPath(p, stroke=1, fill=0)
+        c.restoreState()
+
+    return Piece("roof", "roof", width, height, body, outline, per_house=1,
+                 suffix=suffix)
+
+
+def wing_roof_piece(cfg, material, name, suffix, length_cm, hip_below,
+                    glue_tabs, seed_id):
+    """The roof of one wing of an L-shaped house: two slopes folded along
+    the ridge, like a normal roof, but the end towards the other wing is
+    cut at an angle where the two roofs meet (a hip on the outside corner,
+    a valley on the inside corner).
+
+    `hip_below` tells which slope of the sheet is the one that meets the
+    hip: the lower one in one wing, the upper one in the other, because
+    the two roofs are mirror images. With `glue_tabs` the two slanted
+    edges get a tab to glue under the roof of the other wing.
+    """
+    half = cfg.width_cm / 2
+    side = slope_side_cm(cfg, cfg.width_cm)
+    eave = cfg.roof_overhang_cm + cfg.roof_margin_cm       # beyond the walls
+    end = cfg.roof_margin_cm                               # beyond the gable
+    tab = 0.6 if glue_tabs else 0.0
+    shift = eave * half / side                             # slant of the cut
+
+    x_off = shift + tab
+    x_end = x_off + length_cm + end
+    depth = side + eave
+    height = 2 * depth
+    ridge = height / 2
+    ridge_left = x_off + half
+    valley_far = x_off + cfg.width_cm + shift              # at the valley eave
+
+    width = x_end
+    # The slanted edges: a hip below the ridge, a valley above, or the reverse
+    sign_hip = -1 if hip_below else 1
+    hip_far = tab                                          # at the hip eave
+    y_hip = ridge + sign_hip * depth
+    y_valley = ridge - sign_hip * depth
+
+    hip_face = [(ridge_left, ridge), (x_end, ridge), (x_end, y_hip),
+                (hip_far, y_hip)]
+    valley_face = [(ridge_left, ridge), (x_end, ridge), (x_end, y_valley),
+                   (valley_far, y_valley)]
+    tabs = []
+    if glue_tabs:
+        tabs = [[(ridge_left, ridge), (hip_far, y_hip), (0, y_hip),
+                 (ridge_left - tab, ridge)],
+                [(ridge_left, ridge), (valley_far, y_valley),
+                 (valley_far - tab, y_valley), (ridge_left - tab, ridge)]]
+
+    # The whole sheet, as one outline
+    if hip_below:
+        sheet = [(0, 0), (x_end, 0), (x_end, height),
+                 (valley_far - tab, height), (ridge_left - tab, ridge)]
+    else:
+        sheet = [(0, height), (x_end, height), (x_end, 0),
+                 (valley_far - tab, 0), (ridge_left - tab, ridge)]
+    sheet = [(x * cm, y * cm) for x, y in sheet]
+
+    def scaled(points):
+        return [(x * cm, y * cm) for x, y in points]
+
+    palette = ROOF_PALETTES[material] if cfg.textures_enabled else None
+
+    def body(c, door_present=True):
+        if palette is None:
+            return
+
+        c.saveState()
+        rnd = random.Random(f"{cfg.seed}/{seed_id}/{material}")
+
+        for face, below in ((hip_face, hip_below),
+                            (valley_face, not hip_below)):
+            fill_path(c, polygon(c, scaled(face)), palette["base"])
+            c.saveState()
+            area = c.beginPath()
+            pts = scaled(face)
+            area.moveTo(*pts[0])
+            for point in pts[1:]:
+                area.lineTo(*point)
+            area.close()
+            c.clipPath(area, stroke=0, fill=0)
+            if not below:                       # the slope above the ridge
+                c.translate(0, height * cm)
+                c.scale(1, -1)
+            ROOF_TEXTURES[material](c, width * cm, ridge * cm, palette, rnd)
+            c.restoreState()
+
+        for piece_tab in tabs:
+            fill_path(c, polygon(c, scaled(piece_tab)), palette["base"])
+        c.restoreState()
+
+    def outline(c, labels=None):
+        c.saveState()
+        c.setStrokeColorRGB(*cfg.line_color)
+        c.setLineWidth(cfg.line_width)
+
+        c.setDash(*cfg.dash)
+        p = c.beginPath()
+        p.moveTo(*sheet[0])
+        for point in sheet[1:]:
+            p.lineTo(*point)
+        p.close()
+        c.drawPath(p, stroke=1, fill=0)
+
+        # Folds: the ridge, and the slanted edges that have a tab
+        c.setDash()
+        c.line(ridge_left * cm, ridge * cm, x_end * cm, ridge * cm)
+        if glue_tabs:
+            c.line(ridge_left * cm, ridge * cm, hip_far * cm, y_hip * cm)
+            c.line(ridge_left * cm, ridge * cm, valley_far * cm,
+                   y_valley * cm)
+        c.restoreState()
+
+    return Piece(name, "roof", width * cm, height * cm, body, outline,
+                 per_house=1, suffix=suffix)
+
+
+def make_l_pieces(cfg, wall_material, roof_material):
+    """The pieces of an L-shaped house: six walls and the roof.
+
+    The house is made of two wings of the same width. The first one is
+    `length_cm` long, the second one `wing_length_cm`, and they meet in a
+    corner. Seen from above the walls go around like this:
+
+        wall 6 ... the long outside wall of the second wing
+        wall 5 ... the gable of the second wing
+        wall 4 ... inside, along the second wing
+        wall 3 ... inside, along the first wing
+        wall 2 ... the gable of the first wing
+        wall 1 ... the long outside wall of the first wing
+    """
+    width, length, wing = cfg.width_cm, cfg.length_cm, cfg.wing_length_cm
+    gabled = cfg.roof_type == "gabled"
+    footprint = [(0, 0), (length, 0), (length, width), (width, width),
+                 (width, wing), (0, wing)]
+
+    lengths = [length, width, length - width, wing - width, width, wing]
+    gables = {1, 4} if gabled else set()
+    door_wall = 1 if cfg.door_on == "short" else 0
+
+    pieces = []
+    for i, wall_length in enumerate(lengths):
+        piece = wall_piece(cfg, f"wall {i + 1}", "wall", wall_length,
+                           cfg.height_cm, i in gables, i == door_wall,
+                           wall_material, seed_id=20 + i, per_house=1)
+        corners = (chr(65 + (i - 1) % 6), chr(65 + i))
+        pieces.append(replace(piece, suffix=f" {i + 1}", joints=corners))
+
+    if gabled:
+        pieces.append(wing_roof_piece(cfg, roof_material, "roof wing A", " A",
+                                      length, hip_below=True, glue_tabs=True,
+                                      seed_id=3))
+        pieces.append(wing_roof_piece(cfg, roof_material, "roof wing B", " B",
+                                      wing, hip_below=False, glue_tabs=False,
+                                      seed_id=4))
+    else:
+        pieces.append(flat_roof_piece(cfg, roof_material, footprint,
+                                      seed_id=3))
+    return pieces
+
+
 def make_pieces(cfg, wall_material, roof_material):
-    """The three pieces of a house: short wall, long wall, roof."""
+    """The pieces of a house: the walls, the roof and, if there are roof
+    windows, a strip of paper for each."""
+    if cfg.house_shape == "L":
+        return make_l_pieces(cfg, wall_material, roof_material)
+
+    gabled = cfg.roof_type == "gabled"
     short_wall = wall_piece(
         cfg, "short wall", "short", cfg.width_cm, cfg.height_cm,
-        True, cfg.door_on == "short", wall_material, seed_id=1)
+        gabled, cfg.door_on == "short", wall_material, seed_id=1)
     long_wall = wall_piece(
         cfg, "long wall", "long", cfg.length_cm, cfg.height_cm,
         False, cfg.door_on == "long", wall_material, seed_id=2)
-    roof = roof_piece(cfg, roof_material, seed_id=3)
+    if gabled:
+        roof = roof_piece(cfg, roof_material, seed_id=3)
+    else:
+        footprint = [(0, 0), (cfg.length_cm, 0),
+                     (cfg.length_cm, cfg.width_cm), (0, cfg.width_cm)]
+        roof = flat_roof_piece(cfg, roof_material, footprint, seed_id=3)
     pieces = [short_wall, long_wall, roof]
 
     # One strip for every roof window; windows of the same width share
@@ -1589,13 +2090,18 @@ def pack_pages(cfg, items):
 
 def _labels(cfg, piece, wall_index, house, show_house):
     """Corner letters for the two side tabs of a wall, or None."""
-    if not cfg.joint_labels or (piece.role, wall_index) not in JOINTS:
+    if not cfg.joint_labels:
+        return None
+    if piece.joints is not None:
+        left, right = piece.joints
+    elif (piece.role, wall_index) in JOINTS:
+        left, right = JOINTS[(piece.role, wall_index)]
+    else:
         return None
 
     def text(letter_):
         return f"{house + 1}{letter_}" if show_house else letter_
 
-    left, right = JOINTS[(piece.role, wall_index)]
     return text(left), text(right)
 
 
@@ -1794,16 +2300,17 @@ def describe_page(cfg, page):
     counts = {}
     doors = 0
     for p in page.placements:
-        role = p.item.piece.role
-        counts[role] = counts.get(role, 0) + 1
+        kind = (p.item.piece.role, p.item.piece.suffix)
+        counts[kind] = counts.get(kind, 0) + 1
         if p.item.piece.has_door and p.item.door:
             doors += 1
 
     pw, ph = page.size
     orientation = t("orientation.landscape" if pw > ph
                     else "orientation.portrait")
-    parts = ", ".join(t("msg.part", count=n, name=role_label(cfg, role))
-                      for role, n in counts.items())
+    parts = ", ".join(t("msg.part", count=n,
+                        name=role_label(cfg, role) + suffix)
+                      for (role, suffix), n in counts.items())
     rotated = sum(p.rotated for p in page.placements)
 
     return t("msg.page_desc", paper=cfg.paper, orientation=orientation,
@@ -1872,16 +2379,17 @@ def run(cfg):
                                          cfg.wall_material, cfg.roof_material)
             files += paths
 
-        side = slope_side_cm(cfg, cfg.width_cm)
-        slope = side + cfg.roof_overhang_cm
+        if cfg.house_shape == "rectangle" and cfg.roof_type == "gabled":
+            side = slope_side_cm(cfg, cfg.width_cm)
+            slope = side + cfg.roof_overhang_cm
 
-        print()
-        print(t("msg.roof_title"))
-        print(t("msg.roof_side", value=side))
-        print(t("msg.roof_depth", value=slope))
-        print(t("msg.roof_base", length=cfg.length_cm, depth=2 * slope))
-        print(t("msg.roof_sheet", margin=cfg.roof_margin_cm,
-                w=roof.width / cm, h=roof.height / cm))
+            print()
+            print(t("msg.roof_title"))
+            print(t("msg.roof_side", value=side))
+            print(t("msg.roof_depth", value=slope))
+            print(t("msg.roof_base", length=cfg.length_cm, depth=2 * slope))
+            print(t("msg.roof_sheet", margin=cfg.roof_margin_cm,
+                    w=roof.width / cm, h=roof.height / cm))
         print()
         print(t("msg.door_side", side=t(f"side.{cfg.door_on}")))
 
