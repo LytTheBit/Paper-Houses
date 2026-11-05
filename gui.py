@@ -55,6 +55,7 @@ COLORS = {
     "accent_dark": "#9c4220",
     "accent_light": "#f4d9cb",
     "accent_hover": "#e9b9a2",
+    "wing": "#e8a37f",          # the second wing of an L
     "empty": "#efe6da",
     "empty_border": "#dccfbd",
     "sidebar": "#2f2420",
@@ -192,6 +193,9 @@ def disabled_fields(values):
 
     if values["house_shape"] != "L":
         off.add("wing_length_cm")
+
+    if not values.get("top_bottom_tabs", True):
+        off.add("tab_corners")
 
     if values["roof_type"] == "flat":
         off |= GABLED_ONLY
@@ -527,11 +531,12 @@ def draw_indicator(kind, state, size, pad):
 
 class SizePicker(tk.Canvas):
     """A grid like the one used to choose the size of a table in a word
-    processor: move over it, click, and the house gets that many squares."""
+    processor: move over it, click, and the house gets that many squares.
+    A right click chooses how far down the second wing of an L goes."""
 
-    ROWS, COLS = 6, 10
+    ROWS, COLS = 8, 10
 
-    def __init__(self, parent, scale, font, on_pick, on_hover):
+    def __init__(self, parent, scale, font, on_pick, on_hover, on_wing=None):
         self.cell = round(26 * scale)
         self.gap = round(3 * scale)
         self.left = round(26 * scale)
@@ -543,7 +548,9 @@ class SizePicker(tk.Canvas):
                          highlightthickness=0, cursor="hand2")
         self.on_pick = on_pick
         self.on_hover = on_hover
+        self.on_wing = on_wing
         self.selection = None       # (rows, columns) as counts
+        self.wing = None            # rows, counting the ones of the house
         self.hover = None           # (row index, column index)
 
         self.items = {}
@@ -565,6 +572,8 @@ class SizePicker(tk.Canvas):
         self.bind("<Motion>", self._motion)
         self.bind("<Leave>", self._leave)
         self.bind("<Button-1>", self._click)
+        for sequence in ("<Button-3>", "<Button-2>", "<Control-Button-1>"):
+            self.bind(sequence, self._right_click)      # Windows, Mac
 
     def set_labels(self, long_text, gable_text):
         self.itemconfigure(self.long_label, text=long_text)
@@ -597,8 +606,14 @@ class SizePicker(tk.Canvas):
         if position is not None:
             self.on_pick(position[0] + 1, position[1] + 1)
 
-    def set_selection(self, rows, cols):
+    def _right_click(self, event):
+        position = self._cell_at(event)
+        if position is not None and self.on_wing:
+            self.on_wing(position[0] + 1)
+
+    def set_selection(self, rows, cols, wing=None):
         self.selection = (rows, cols) if rows and cols else None
+        self.wing = wing if self.selection else None
         self._paint()
 
     def _paint(self):
@@ -608,6 +623,9 @@ class SizePicker(tk.Canvas):
             elif self.selection and r < self.selection[0] \
                     and c < self.selection[1]:
                 fill, outline = COLORS["accent"], COLORS["accent_dark"]
+            elif (self.selection and self.wing and c < self.selection[0]
+                  and self.selection[0] <= r < self.wing):
+                fill, outline = COLORS["wing"], COLORS["accent_dark"]
             else:
                 fill, outline = COLORS["empty"], COLORS["empty_border"]
             self.itemconfigure(item, fill=fill, outline=outline)
@@ -696,7 +714,7 @@ class App:
         self._linking = False
         self._linking_houses = False
 
-        self.root.geometry(f"{self.px(1160)}x{self.px(800)}")
+        self.root.geometry(f"{self.px(1160)}x{self.px(900)}")
         self.root.minsize(self.px(1000), self.px(700))
         self.root.configure(bg=COLORS["bg"])
         self.root.title(self.t("ui.title"))
@@ -1185,7 +1203,7 @@ class App:
 
     def _radios(self, parent, name, row, labels, column=1):
         box = ttk.Frame(parent, style="Card.TFrame")
-        box.grid(row=row, column=column, sticky="w")
+        box.grid(row=row, column=column, columnspan=3, sticky="w")
         widgets = []
         for i, (value, text) in enumerate(labels):
             widget = ttk.Radiobutton(box, text=text, value=value,
@@ -1250,15 +1268,20 @@ class App:
         picker_card = self._card(right, self.t("card.picker"), row=0,
                                  sticky="new")
         self.picker = SizePicker(picker_card, self.scale, self.fonts["small"],
-                                 self._pick, self._picker_hover)
+                                 self._pick, self._picker_hover,
+                                 self._pick_wing)
         self.picker.grid(row=1, column=0, sticky="w")
         self.picker.set_labels(self.t("ui.picker_long"),
                                self.t("ui.picker_gable"))
         ttk.Label(picker_card, textvariable=self.picker_caption,
-                  style="Muted.Card.TLabel").grid(row=2, column=0, sticky="w",
-                                                  pady=(8, 0))
+                  style="Muted.Card.TLabel", wraplength=self.px(330),
+                  justify="left").grid(row=2, column=0, sticky="w",
+                                       pady=(8, 0))
+        ttk.Label(picker_card, text=self.t("ui.picker_hint"),
+                  style="Muted.Card.TLabel").grid(row=3, column=0, sticky="w",
+                                                  pady=(2, 0))
         self._reg("width_cm", self.picker)
-        self._help(self.t("sub.house"), self.picker)
+        self._help(self.t("ui.picker_help"), self.picker)
 
         amount = self._card(right, self.t("card.amount"), row=1, sticky="new")
         check = ttk.Checkbutton(amount, text=self.t("ui.specific_houses"),
@@ -1279,6 +1302,18 @@ class App:
     def _pick(self, rows, cols):
         self.squares["width_cm"].set(format_value(rows))
         self.squares["length_cm"].set(format_value(cols))
+
+    def _pick_wing(self, rows):
+        """Right click on the grid: the second wing goes down that far. A
+        click inside the house itself takes the second wing away."""
+        width = parse_float(self.squares["width_cm"].get())
+        if width is None:
+            return
+        if rows <= round(width):
+            self.vars["house_shape"].set("rectangle")
+            return
+        self.vars["house_shape"].set("L")
+        self.squares["wing_length_cm"].set(format_value(rows))
 
     def _picker_hover(self, position):
         if position is None:
@@ -1306,10 +1341,25 @@ class App:
                     and 1 <= cols <= SizePicker.COLS):
                 selection = (rows, cols)
 
-        if not caption_only and hasattr(self, "picker"):
-            self.picker.set_selection(*(selection or (0, 0)))
+        # The second wing of an L, if it is a whole number of squares that
+        # fits and goes beyond the house
+        wing = None
+        if selection and self.vars["house_shape"].get() == "L":
+            value = parse_float(self.squares["wing_length_cm"].get())
+            if value and abs(value - round(value)) < 1e-6 \
+                    and selection[0] < round(value) <= SizePicker.ROWS:
+                wing = round(value)
 
-        if selection:
+        if not caption_only and hasattr(self, "picker"):
+            self.picker.set_selection(*(selection or (0, 0)), wing)
+
+        if selection and wing:
+            self.picker_caption.set(self.t(
+                "ui.picker_caption_l", rows=selection[0], cols=selection[1],
+                w=self.num(round(selection[0] * cell, 4)),
+                l=self.num(round(selection[1] * cell, 4)),
+                wing=wing, wl=self.num(round(wing * cell, 4))))
+        elif selection:
             self.picker_caption.set(self.t(
                 "ui.picker_caption", rows=selection[0], cols=selection[1],
                 w=self.num(round(selection[0] * cell, 4)),
@@ -1660,7 +1710,7 @@ class App:
         values = {name: self.vars[name].get() for name in (
             "generate_full_house", "textures_enabled", "generate_all_variants",
             "door_and_windows", "houses", "house_shape", "roof_type",
-            "roof_windows")}
+            "roof_windows", "top_bottom_tabs")}
         off = disabled_fields(values)
 
         for name, widgets in self.widgets.items():
@@ -1674,6 +1724,10 @@ class App:
                                          else "disabled")
                 except tk.TclError:
                     pass
+
+        # The drawing of the L on the grid follows the shape
+        if hasattr(self, "picker"):
+            self._update_picker()
 
     # ----------------------------------------------------------
     # Language

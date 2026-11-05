@@ -26,6 +26,7 @@ A single Python script draws the cutting and folding templates for a small house
 - **One door per house**: the door is assigned house by house, so N houses get N doors. The other wall of the pair gets a window in its place.
 - **Corner letters** on the side tabs: the two tabs with the same letter (A to D for a rectangle, A to F for an L, prefixed by the house number when you print several houses) are glued together.
 - **Tabs you can leave out**: the tabs at the top and at the bottom of the walls only help the shape; you can print the walls without them.
+- **Tabs that never overlap**: the whole corner of the tabs at the top and at the bottom, and of the flaps along the gables, is cut at 45 degrees, so they are trapezoids and the tabs of two neighbouring pieces cannot overlap (the side tabs stay square). You can keep them square: then only the tabs that would overlap are cut.
 - **Calibration ruler**: a 5 cm line on every page of the combined PDF, to check that the print is at the right scale.
 - **Readable marks**: the half-height mark and the letters change to black or white when they would be hard to see on the wall colour.
 - **Textures are drawn once per PDF** and reused for every copy, which roughly halves the size of a textured file with two houses.
@@ -97,22 +98,31 @@ Turn on **Roof windows** (page *Doors & windows*, or `--roof-windows`) to get fl
 
 ## L-shaped houses
 
-Choose **L shape** (page *House*, or `--house-shape L`). The house is made of two wings with the same width:
+Choose **L shape** on the page *House*, or **right-click on the grid**, as far down as the second wing should go (see the window below). On the command line it is `--house-shape L`. The house is made of two wings with the same width:
 
 - the first wing is `length_cm` long, the second one `wing_length_cm` (the length of the outside wall, so both include the corner square);
-- both must be longer than the width of the house.
+- both must be at least one square longer than the width of the house.
 
 ![The pieces of an L-shaped house](assets/house_l_sheets.png)
 
-There are **six walls**, numbered around the house, with the corner letters `A` to `F`: wall 1 is the long outside wall of the first wing, wall 2 its gable (with the door when `door_on` is `short`), wall 3 and wall 4 are inside, wall 5 is the gable of the second wing and wall 6 its long outside wall.
+There are **six walls**, numbered around the house, with the corner letters `A` to `F`: wall 1 is the long outside wall of the first wing, wall 2 its gable (with the door when `door_on` is `short`), wall 3 and wall 4 are inside, wall 5 is the gable of the second wing and wall 6 its long outside wall. Wall 6 has a gable too, but only at the end that is next to the first wing, where the long roof ends.
 
-The gabled roof is made of **two roofs, one for each wing**. Where the two wings meet, the roofs are cut at an angle: a hip on the outside corner and a valley on the inside corner. The first roof has two glue tabs on those slanted edges, to glue under the second roof. With a flat roof there is a single roof sheet shaped like an L.
+The gabled roof is made of **two roofs, and each one rests on two supports**:
+
+- **Roof A** is a long roof over the whole first wing. It rests on the gable of wall 2 and on the gable at the end of wall 6. Two thin dotted lines on one of its slopes, the one that faces the second wing, show where roof B is glued.
+- **Roof B** covers the second wing. It rests on the gable of wall 5 and, at the other end, on roof A: the end of each slope is cut at an angle, along the valley where the two roofs meet, and has a tab to glue under roof A. The ridge of roof B ends where it meets the ridge of roof A, at the point where the two dotted lines meet.
+
+Glue roof A first, then roof B along the dotted lines. With a flat roof there is a single roof sheet shaped like an L.
 
 ## Flat roofs
 
 Choose **Flat** as the roof (`--roof-type flat`). The short walls lose their gable, and the roof is a single sheet with a margin all around (`roof_margin_cm`), paved with tiles. There are two tiles to a side of a game square, a thicker joint along every square, a small cross at every corner and squares that are a little lighter and darker, like a chess board. The material of the roof gives the colour of the tiles.
 
 ![Flat roof with the squares of the game](assets/house_flat_roof_sheets.png)
+
+## Tabs
+
+**Corners.** The tabs at the top and at the bottom of the walls, and the flaps along the sloping sides of the gables, have the whole corner cut at 45 degrees (`tab_corners` is `cut`): they are trapezoids, not rectangles. This way they never overlap with a neighbouring tab or flap, for example on the wall of an L that has a gable only at one end. With `--tab-corners square` the tabs and the flaps keep their square corners, and the program cuts only the ones that would overlap (in that wall, the flat tab next to the flap of the gable). The side tabs are always square.
 
 ## Walls without the top and bottom tabs
 
@@ -140,7 +150,7 @@ You can generate the PDFs without downloading anything, from the repository page
 | Field | What it does |
 | --- | --- |
 | Number of houses | Exactly the pieces for that many houses. Leave it empty to fill every page with copies of one piece |
-| House shape, second wing | Rectangle or L; the length of the second wing of the L |
+| House shape, second wing | Rectangle or L; the length of the second wing of the L (at least one square longer than the width of the house) |
 | Roof shape, roof windows | Gabled or flat; flat windows on a gabled roof, for miniatures |
 | Paint textures, wall material, roof material | Look of the house. "Every wall/roof combination" makes all 25 versions (needs textures) |
 | Side of the house with the door | Short or long side |
@@ -180,6 +190,7 @@ Started with no options, the program opens a window:
 ![The settings window](assets/gui_house.png)
 
 - One page for each group of settings: **House** (sizes, shape and roof), **Look** (textures, lines), **Doors & windows** (including the roof windows), **Pages & files** and **Advanced**, which holds every other setting. Move the mouse over a setting to read what it does.
+- On the page **House** you can choose the size on the grid: **left click** sets the sides of the house, **right click** sets the second wing of an L, as far down as you click. The wing is drawn on the grid in a lighter colour. A right click on the house itself takes the second wing away.
 - The language, English or Italian, is chosen at the bottom left and applies to the window and to the messages.
 - Settings that do nothing in the current situation are greyed out. For example the materials when textures are off, the second wing when the house is not an L, or the pitch of the roof when the roof is flat.
 - **Generate PDFs** runs in the background and reports in the log at the bottom. **Open folder** shows the result.
@@ -187,7 +198,7 @@ Started with no options, the program opens a window:
 - **Copy command** puts the equivalent command-line command in the clipboard, with only the settings that differ from the defaults. It is also a quick way to fill the form of the GitHub workflow.
 - Numbers accept the decimal comma: `7,5` works.
 
-An L-shaped house with a flat roof, marble walls and blue tiles, and the same page in Italian:
+An L-shaped house with marble walls and blue tiles (the second wing was chosen with a right click on the grid), and the same page in Italian:
 
 ![The window with an L house](assets/gui_house_l.png)
 ![La finestra in italiano](assets/gui_house_it.png)
@@ -261,9 +272,10 @@ The table lists the defaults currently set in `Config`. In the window they are g
 | `length_cm` | `12.5` | Long wall inner width (5 squares); the first wing of an L |
 | `height_cm` | `7.5` | Wall inner height (3 squares) |
 | `house_shape` | `"rectangle"` | `"rectangle"` or `"L"` |
-| `wing_length_cm` | `10.0` | L shape only: length of the second wing |
+| `wing_length_cm` | `10.0` | L shape only: length of the second wing, at least one square more than the width |
 | `roof_type` | `"gabled"` | `"gabled"` (two slopes) or `"flat"` |
 | `top_bottom_tabs` | `True` | Print the tabs at the top and at the bottom of the walls |
+| `tab_corners` | `"cut"` | Corners of the top and bottom tabs and of the gable flaps: `"cut"` cuts the whole corner at 45 degrees (trapezoids), or `"square"` (cut only where they would overlap) |
 | `tab_width_cm` | `1.0` | Tab width around the inner rectangle |
 | `roof_height_cm` | `5.0` | Height of the roof gable |
 | `roof_flap_cm` | `1.0` | Width of the roof flaps on the gable |
@@ -320,7 +332,7 @@ The tests cover geometry, packing, doors and windows, roof windows (where they g
 - The packer is a fast heuristic: it is not guaranteed to find the layout with the fewest pages.
 - Textures are drawn procedurally and are not meant to look photographic.
 - Roof windows work only on a rectangular house with a gabled roof. An L or a flat roof has none, and the program says so.
-- The two wings of an L have the same width. The roof of an L is the part that needs the most care when gluing.
+- The two wings of an L have the same width. In an L the first roof is a plain long roof, so the roofs of the two wings do not make the hip you would see on a real house at the outside corner.
 - A flat roof is a plain sheet: no parapet or edge.
 
 ## Roadmap

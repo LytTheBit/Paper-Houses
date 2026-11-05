@@ -118,8 +118,10 @@ STRINGS["en"] = {
     "err.house_shape": "house_shape must be 'rectangle' or 'L' "
                        "(got {value!r})",
     "err.roof_type": "roof_type must be 'gabled' or 'flat' (got {value!r})",
+    "err.tab_corners": "tab_corners must be 'cut' or 'square' "
+                       "(got {value!r})",
     "err.wing_short": "in an L-shaped house both wings must be longer than "
-                      "the width of the house",
+                      "the width of the house, by at least one square",
     "err.positive": "{name} must be positive (got {value})",
     "err.locked": "Cannot write {path}. If it is open in a PDF viewer, "
                   "close it and run the script again.",
@@ -187,7 +189,7 @@ STRINGS["en"] = {
     "ui.roof_shape": "Roof",
     "ui.roof_gabled": "Two slopes",
     "ui.roof_flat": "Flat",
-    "ui.sq.wing_length_cm": "Second wing (squares)",
+    "ui.sq.wing_length_cm": "Second wing, down (squares)",
     "ui.roof_windows_hint": "Flat spots on the roof where miniatures "
                             "can stand.",
     "ui.sq.width_cm": "Gable side (squares)",
@@ -200,6 +202,12 @@ STRINGS["en"] = {
     "ui.picker_gable": "Gable side",
     "ui.picker_caption": "{rows} × {cols} squares ({w} × {l} cm)",
     "ui.picker_none": "Move over the grid and click",
+    "ui.picker_caption_l": "{rows} × {cols} squares ({w} × {l} cm)\n"
+                           "Second wing: {wing} squares ({wl} cm)",
+    "ui.picker_hint": "Right click: second wing (L shape)",
+    "ui.picker_help": "Left click: size of the house. Right click: the "
+                      "second wing of an L, as far down as you click. "
+                      "Right click on the house itself to take it away.",
     "ui.specific_houses": "A specific number of houses",
     "ui.houses_hint": "Leave it off to fill every page with copies of one "
                       "piece.",
@@ -372,6 +380,13 @@ STRINGS["en"] = {
                            "measured along the outside of the house",
     "label.roof_type": "Roof shape",
     "help.roof_type": "shape of the roof: gabled (two slopes) or flat",
+    "label.tab_corners": "Tab corners",
+    "help.tab_corners": "corners of the tabs at the top and at the bottom "
+                        "of the walls and of the flaps of the gables: "
+                        "'cut' cuts the whole corner at an angle (a "
+                        "trapezoid), so neighbouring pieces never overlap; "
+                        "'square' keeps them square and cuts only the ones "
+                        "that would overlap",
     "label.top_bottom_tabs": "Top and bottom tabs",
     "help.top_bottom_tabs": "print the tabs at the top and at the bottom "
                             "of the walls (the side tabs are always "
@@ -452,8 +467,10 @@ STRINGS["it"] = {
                        "(ricevuto {value!r})",
     "err.roof_type": "roof_type deve essere 'gabled' o 'flat' "
                      "(ricevuto {value!r})",
+    "err.tab_corners": "tab_corners deve essere 'cut' o 'square' "
+                       "(ricevuto {value!r})",
     "err.wing_short": "in una casa a L le due ali devono essere più lunghe "
-                      "della larghezza della casa",
+                      "della larghezza della casa, di almeno una casella",
     "err.positive": "{name} deve essere positivo (ricevuto {value})",
     "err.locked": "Non riesco a scrivere {path}. Se è aperto in un "
                   "visualizzatore di PDF, chiudilo e riavvia il programma.",
@@ -521,7 +538,7 @@ STRINGS["it"] = {
     "ui.roof_shape": "Tetto",
     "ui.roof_gabled": "A due falde",
     "ui.roof_flat": "Piatto",
-    "ui.sq.wing_length_cm": "Seconda ala (caselle)",
+    "ui.sq.wing_length_cm": "Seconda ala, in giù (caselle)",
     "ui.roof_windows_hint": "Punti piani sul tetto dove possono stare le "
                            "miniature.",
     "ui.sq.width_cm": "Lato corto (caselle)",
@@ -534,6 +551,12 @@ STRINGS["it"] = {
     "ui.picker_gable": "Lato corto",
     "ui.picker_caption": "{rows} × {cols} caselle ({w} × {l} cm)",
     "ui.picker_none": "Passa sulla griglia e clicca",
+    "ui.picker_caption_l": "{rows} × {cols} caselle ({w} × {l} cm)\n"
+                           "Seconda ala: {wing} caselle ({wl} cm)",
+    "ui.picker_hint": "Clic destro: seconda ala (casa a L)",
+    "ui.picker_help": "Clic sinistro: dimensioni della casa. Clic destro: "
+                      "la seconda ala di una L, fin dove clicchi in giù. "
+                      "Clic destro sulla casa stessa per toglierla.",
     "ui.specific_houses": "Un numero preciso di case",
     "ui.houses_hint": "Se lo lasci spento, ogni foglio viene riempito con "
                       "copie di un solo pezzo.",
@@ -713,6 +736,13 @@ STRINGS["it"] = {
                            "seconda ala, misurata lungo l'esterno della casa",
     "label.roof_type": "Forma del tetto",
     "help.roof_type": "forma del tetto: a due falde oppure piatto",
+    "label.tab_corners": "Angoli delle linguette",
+    "help.tab_corners": "angoli delle linguette in alto e in basso delle "
+                        "pareti e delle alette dei timpani: 'cut' taglia "
+                        "l'angolo intero in diagonale (un trapezio), così i "
+                        "pezzi vicini non si sovrappongono mai; 'square' li "
+                        "lascia quadrati e taglia solo quelli che si "
+                        "sovrapporrebbero",
     "label.top_bottom_tabs": "Linguette in alto e in basso",
     "help.top_bottom_tabs": "stampa le linguette in alto e in basso delle "
                             "pareti (quelle laterali si stampano sempre)",

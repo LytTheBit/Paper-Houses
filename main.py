@@ -71,6 +71,12 @@ class Config:
     top_bottom_tabs: bool = _f(
         True, "print the tabs at the top and at the bottom of the walls "
               "(the side tabs are always printed)")
+    tab_corners: str = _f(
+        "cut", "corners of the tabs at the top and at the bottom of the "
+               "walls and of the flaps of the gables: 'cut' cuts the whole "
+               "corner at an angle (a trapezoid), so neighbouring pieces "
+               "never overlap; 'square' keeps them square and cuts only "
+               "the ones that would overlap", choices=["cut", "square"])
 
     # --- Look: lines and textures ---
     textures_enabled: bool = _f(
@@ -292,9 +298,11 @@ def validate(cfg):
         errors.append(t("err.house_shape", value=cfg.house_shape))
     if cfg.roof_type not in ("gabled", "flat"):
         errors.append(t("err.roof_type", value=cfg.roof_type))
+    if cfg.tab_corners not in ("cut", "square"):
+        errors.append(t("err.tab_corners", value=cfg.tab_corners))
     if cfg.house_shape == "L" and (
-            cfg.length_cm <= cfg.width_cm + 0.01
-            or cfg.wing_length_cm <= cfg.width_cm + 0.01):
+            cfg.length_cm < cfg.width_cm + cfg.cell_cm - 0.01
+            or cfg.wing_length_cm < cfg.width_cm + cfg.cell_cm - 0.01):
         errors.append(t("err.wing_short"))
 
     for name in ("width_cm", "length_cm", "height_cm", "tab_width_cm",
@@ -984,10 +992,13 @@ def draw_openings(cfg, c, x1, y1, width_cm, height_cm,
 # GEOMETRY
 # ============================================================
 
-def outward_parallel(x1, y1, x2, y2, distance):
+def outward_parallel(x1, y1, x2, y2, distance, inset=0):
     """
     Returns the endpoints of the parallel line
     shifted towards the outside of the triangle.
+
+    With `inset` the line is also made shorter at both ends: a flap that
+    has the two ends cut at an angle (the whole corner), a trapezoid.
     """
 
     dx = x2 - x1
@@ -999,11 +1010,15 @@ def outward_parallel(x1, y1, x2, y2, distance):
     nx = -dy / length
     ny = dx / length
 
+    # Direction of the line
+    ux = dx / length
+    uy = dy / length
+
     return (
-        x1 + nx * distance,
-        y1 + ny * distance,
-        x2 + nx * distance,
-        y2 + ny * distance
+        x1 + nx * distance + ux * inset,
+        y1 + ny * distance + uy * inset,
+        x2 + nx * distance - ux * inset,
+        y2 + ny * distance - uy * inset
     )
 
 
@@ -1168,9 +1183,14 @@ JOINTS = {
 
 
 def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
-               has_door, material, seed_id, per_house=2):
+               has_door, material, seed_id, per_house=2,
+               gable_span_cm=None):
     """
     width_cm and height_cm are the INNER measurements.
+
+    With `gable_span_cm` the gable covers only that much of the wall, at its
+    right end; the rest of the top edge is flat and has its tab. It is the
+    wall that holds the end of one roof and the side of another.
 
     Convention:
       - solid line  = fold
@@ -1186,8 +1206,10 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
 
     # The tabs at the bottom and at the top can be left out (a wall with
     # a roof gable has no tab at the top anyway)
+    partial = bool(with_roof and gable_span_cm is not None
+                   and gable_span_cm < width_cm - 1e-6)
     bottom_tab = B if cfg.top_bottom_tabs else 0
-    top_tab = B if cfg.top_bottom_tabs and not with_roof else 0
+    top_tab = B if cfg.top_bottom_tabs and (not with_roof or partial) else 0
 
     # Size of the outer rectangle (inner + tabs)
     W = width_cm * cm + 2 * B
@@ -1199,6 +1221,24 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
     y1 = bottom_tab
     y2 = y1 + height_cm * cm
 
+    # Corners of the tabs at the top and at the bottom: the whole corner is
+    # cut at 45 degrees, so each tab is a trapezoid and the tabs of
+    # neighbouring pieces never overlap (the side tabs stay square)
+    cut = min(B, (x2 - x1) / 4) if cfg.tab_corners == "cut" else 0
+
+    def corner_points(*points):
+        """The points of a tab, without the ones that are the same."""
+        result = []
+        for point in points:
+            if not result or point != result[-1]:
+                result.append(point)
+        return result
+
+    # The tab at the bottom, from the left fold to the right fold
+    bottom_poly = corner_points(
+        (x1, y1), (x1, cut), (x1 + cut, 0), (x2 - cut, 0), (x2, cut),
+        (x2, y1))
+
     # --------------------------------------------------------
     # Roof geometry and bounding box size
     # --------------------------------------------------------
@@ -1206,7 +1246,7 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
     if with_roof:
         # The base of the triangle coincides with the top side
         # of the inner rectangle.
-        base_left = x1
+        base_left = x2 - gable_span_cm * cm if partial else x1
         base_right = x2
         base_y = y2
 
@@ -1214,16 +1254,47 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
         apex_y = base_y + ROOF_H
 
         # Flaps: parallel to the two sloping sides
+        # (with cut corners the ends of a flap are cut at 45 degrees, like
+        # the tabs: a trapezoid)
+        def flap_inset(xa, ya, xb, yb):
+            if cfg.tab_corners != "cut":
+                return 0
+            return min(FLAP, math.hypot(xb - xa, yb - ya) / 4)
+
         flap_left = outward_parallel(
-            base_left, base_y, apex_x, apex_y, FLAP)
+            base_left, base_y, apex_x, apex_y, FLAP,
+            flap_inset(base_left, base_y, apex_x, apex_y))
         flap_right = outward_parallel(
-            apex_x, apex_y, base_right, base_y, FLAP)
+            apex_x, apex_y, base_right, base_y, FLAP,
+            flap_inset(apex_x, apex_y, base_right, base_y))
 
         # The drawing ends where the roof border ends
         points_x = [0, W, flap_left[0], flap_left[2],
                     flap_right[0], flap_right[2], apex_x]
         points_y = [0, apex_y, flap_left[1], flap_left[3],
                     flap_right[1], flap_right[3]]
+
+        # The flat part of a wall with a partial gable has its tab next to the
+        # flap of the gable. The flap goes up and to the left, so the corner
+        # of the tab that is near it is cut along the flap, even when the
+        # other corners are square.
+        flat_tab = []
+        if partial and top_tab:
+            gap = 0.06 * cm
+            fx, fy = flap_left[0], flap_left[1]
+            reach = fy - y2
+            if reach <= 1e-6:
+                near = [(base_left, y2), (base_left, y2 + top_tab)]
+            elif reach >= top_tab:
+                x_top = base_left + (fx - base_left) * top_tab / reach
+                near = [(base_left - gap, y2),
+                        (x_top - gap, y2 + top_tab)]
+            else:
+                near = [(base_left - gap, y2), (fx - gap, fy),
+                        (fx - gap, y2 + top_tab)]
+            flat_tab = corner_points(
+                *near, (x1 + cut, y2 + top_tab),
+                (x1, y2 + top_tab - cut), (x1, y2))
 
         # If the flaps stick out on the left, shift everything
         offset_x = -min(0, min(points_x))
@@ -1254,16 +1325,18 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
 
         # Base colour: central band (side tabs + inner rectangle) and
         # bottom tab (and top tab without roof). Corners stay white.
-        zones = [(0, y1, W, y2)]
+        zones = [[(0, y1), (W, y1), (W, y2), (0, y2)]]
         if bottom_tab:
-            zones.append((x1, 0, x2, y1))
-        if top_tab:
-            zones.append((x1, y2, x2, H))
+            zones.append(bottom_poly)
+        if top_tab and partial:
+            zones.append(flat_tab)
+        elif top_tab:
+            zones.append(corner_points(
+                (x2, y2), (x2, H - cut), (x2 - cut, H), (x1 + cut, H),
+                (x1, H - cut), (x1, y2)))
 
-        for xa, ya, xb, yb in zones:
-            fill_path(c, polygon(c, [(xa, ya), (xb, ya),
-                                     (xb, yb), (xa, yb)]),
-                      palette["base"])
+        for zone in zones:
+            fill_path(c, polygon(c, zone), palette["base"])
 
         if with_roof:
             # Triangle and flaps
@@ -1290,6 +1363,8 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
         area.lineTo(x2, y2)
         if with_roof:
             area.lineTo(apex_x, apex_y)
+            if partial:
+                area.lineTo(base_left, y2)
         area.lineTo(x1, y2)
         area.close()
         c.clipPath(area, stroke=0, fill=0)
@@ -1325,8 +1400,8 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
         # shape: the corners between two tabs are removed.
         c.setDash(*cfg.dash)
 
-        bottom_path = ([(0, y1), (x1, y1), (x1, 0), (x2, 0), (x2, y1),
-                        (W, y1)] if bottom_tab else [(0, 0), (W, 0)])
+        bottom_path = ([(0, y1)] + bottom_poly + [(W, y1)]
+                       if bottom_tab else [(0, 0), (W, 0)])
 
         p = c.beginPath()
         if with_roof:
@@ -1340,9 +1415,20 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
             # Top side of the side tabs
             c.line(0, y2, x1, y2)
             c.line(x2, y2, W, y2)
+
+            # The flat part of a partial gable: its tab, or a plain cut
+            if partial and top_tab:
+                tab_path = c.beginPath()
+                tab_path.moveTo(*flat_tab[0])
+                for point in flat_tab[1:]:
+                    tab_path.lineTo(*point)
+                c.drawPath(tab_path, stroke=1, fill=0)
+            elif partial:
+                c.line(x1, y2, base_left, y2)
         else:
-            top_path = ([(W, y2), (x2, y2), (x2, H), (x1, H), (x1, y2),
-                         (0, y2)] if top_tab else [(W, y2), (0, y2)])
+            top_path = ([(W, y2), (x2, y2), (x2, H - cut), (x2 - cut, H),
+                         (x1 + cut, H), (x1, H - cut), (x1, y2), (0, y2)]
+                        if top_tab else [(W, y2), (0, y2)])
             points = bottom_path + top_path
             p.moveTo(*points[0])
             for point in points[1:]:
@@ -1378,6 +1464,8 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
         else:
             p.rect(x1, y1, x2 - x1, y2 - y1)
         c.drawPath(p, stroke=1, fill=0)
+        if partial and top_tab:
+            c.line(x1, y2, flat_tab[0][0], y2)        # fold of the flat tab
 
         # Roof
         if with_roof:
@@ -1408,9 +1496,10 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
                  has_door=has_door, per_house=per_house)
 
 
-def roof_piece(cfg, material, seed_id):
+def roof_piece(cfg, material, seed_id, guides=()):
     """
-    Rectangular sheet with two equal slopes.
+    Rectangular sheet with two equal slopes. `guides` are lines (in cm,
+    on the sheet) that only show where something else is glued.
       - dashed outer border (cut)
       - ridge in the middle, solid line (fold)
 
@@ -1472,6 +1561,15 @@ def roof_piece(cfg, material, seed_id):
         # Ridge (fold), in the middle
         c.setDash()
         c.line(0, Hr / 2, Wr, Hr / 2)
+
+        # Guides: thin dotted lines, nothing to cut or fold
+        if guides:
+            c.setDash(1, 3)
+            c.setLineWidth(cfg.line_width * 0.7)
+            for (xa, ya), (xb, yb) in guides:
+                c.line(xa * cm, ya * cm, xb * cm, yb * cm)
+            c.setDash()
+            c.setLineWidth(cfg.line_width)
 
         # Roof windows: on each slope a flap, cut on three sides and
         # folded on the side towards the ridge
@@ -1713,63 +1811,45 @@ def flat_roof_piece(cfg, material, footprint_cm, seed_id, suffix=""):
                  suffix=suffix)
 
 
-def wing_roof_piece(cfg, material, name, suffix, length_cm, hip_below,
-                    glue_tabs, seed_id):
-    """The roof of one wing of an L-shaped house: two slopes folded along
-    the ridge, like a normal roof, but the end towards the other wing is
-    cut at an angle where the two roofs meet (a hip on the outside corner,
-    a valley on the inside corner).
+def valley_roof_piece(cfg, material, name, suffix, wing_length_cm, seed_id):
+    """The roof of the second wing of an L-shaped house.
 
-    `hip_below` tells which slope of the sheet is the one that meets the
-    hip: the lower one in one wing, the upper one in the other, because
-    the two roofs are mirror images. With `glue_tabs` the two slanted
-    edges get a tab to glue under the roof of the other wing.
+    Two slopes folded along the ridge, like a normal roof. It rests on the
+    gable wall at one end; at the other end it rests on the long roof of the
+    first wing: the end of each slope is cut at an angle, along the valley
+    where the two roofs meet, and has a tab to glue under the long roof.
+    The ridge ends where it meets the ridge of the long roof.
     """
     half = cfg.width_cm / 2
     side = slope_side_cm(cfg, cfg.width_cm)
     eave = cfg.roof_overhang_cm + cfg.roof_margin_cm       # beyond the walls
     end = cfg.roof_margin_cm                               # beyond the gable
-    tab = 0.6 if glue_tabs else 0.0
-    shift = eave * half / side                             # slant of the cut
-
-    x_off = shift + tab
-    x_end = x_off + length_cm + end
+    tab = 0.6
     depth = side + eave
     height = 2 * depth
     ridge = height / 2
-    ridge_left = x_off + half
-    valley_far = x_off + cfg.width_cm + shift              # at the valley eave
 
-    width = x_end
-    # The slanted edges: a hip below the ridge, a valley above, or the reverse
-    sign_hip = -1 if hip_below else 1
-    hip_far = tab                                          # at the hip eave
-    y_hip = ridge + sign_hip * depth
-    y_valley = ridge - sign_hip * depth
+    ridge_left = tab                         # where the two ridges meet
+    x_gable = ridge_left + wing_length_cm - half            # gable wall
+    x_end = x_gable + end
+    x_far = ridge_left + depth * half / side    # the slanted edge, at the eave
+    y_low, y_high = ridge - depth, ridge + depth
 
-    hip_face = [(ridge_left, ridge), (x_end, ridge), (x_end, y_hip),
-                (hip_far, y_hip)]
-    valley_face = [(ridge_left, ridge), (x_end, ridge), (x_end, y_valley),
-                   (valley_far, y_valley)]
-    tabs = []
-    if glue_tabs:
-        tabs = [[(ridge_left, ridge), (hip_far, y_hip), (0, y_hip),
-                 (ridge_left - tab, ridge)],
-                [(ridge_left, ridge), (valley_far, y_valley),
-                 (valley_far - tab, y_valley), (ridge_left - tab, ridge)]]
-
-    # The whole sheet, as one outline
-    if hip_below:
-        sheet = [(0, 0), (x_end, 0), (x_end, height),
-                 (valley_far - tab, height), (ridge_left - tab, ridge)]
-    else:
-        sheet = [(0, height), (x_end, height), (x_end, 0),
-                 (valley_far - tab, 0), (ridge_left - tab, ridge)]
-    sheet = [(x * cm, y * cm) for x, y in sheet]
+    lower = [(ridge_left, ridge), (x_end, ridge), (x_end, y_low),
+             (x_far, y_low)]
+    upper = [(ridge_left, ridge), (x_end, ridge), (x_end, y_high),
+             (x_far, y_high)]
+    tabs = [[(ridge_left, ridge), (x_far, y_low), (x_far - tab, y_low),
+             (0, ridge)],
+            [(ridge_left, ridge), (x_far, y_high), (x_far - tab, y_high),
+             (0, ridge)]]
+    sheet = [(0, ridge), (x_far - tab, y_low), (x_end, y_low),
+             (x_end, y_high), (x_far - tab, y_high)]
 
     def scaled(points):
         return [(x * cm, y * cm) for x, y in points]
 
+    width = x_end
     palette = ROOF_PALETTES[material] if cfg.textures_enabled else None
 
     def body(c, door_present=True):
@@ -1779,8 +1859,7 @@ def wing_roof_piece(cfg, material, name, suffix, length_cm, hip_below,
         c.saveState()
         rnd = random.Random(f"{cfg.seed}/{seed_id}/{material}")
 
-        for face, below in ((hip_face, hip_below),
-                            (valley_face, not hip_below)):
+        for face, is_lower in ((lower, True), (upper, False)):
             fill_path(c, polygon(c, scaled(face)), palette["base"])
             c.saveState()
             area = c.beginPath()
@@ -1790,7 +1869,7 @@ def wing_roof_piece(cfg, material, name, suffix, length_cm, hip_below,
                 area.lineTo(*point)
             area.close()
             c.clipPath(area, stroke=0, fill=0)
-            if not below:                       # the slope above the ridge
+            if not is_lower:                    # the slope above the ridge
                 c.translate(0, height * cm)
                 c.scale(1, -1)
             ROOF_TEXTURES[material](c, width * cm, ridge * cm, palette, rnd)
@@ -1806,20 +1885,19 @@ def wing_roof_piece(cfg, material, name, suffix, length_cm, hip_below,
         c.setLineWidth(cfg.line_width)
 
         c.setDash(*cfg.dash)
+        outer = scaled(sheet)
         p = c.beginPath()
-        p.moveTo(*sheet[0])
-        for point in sheet[1:]:
+        p.moveTo(*outer[0])
+        for point in outer[1:]:
             p.lineTo(*point)
         p.close()
         c.drawPath(p, stroke=1, fill=0)
 
-        # Folds: the ridge, and the slanted edges that have a tab
+        # Folds: the ridge, and the two slanted edges that have a tab
         c.setDash()
         c.line(ridge_left * cm, ridge * cm, x_end * cm, ridge * cm)
-        if glue_tabs:
-            c.line(ridge_left * cm, ridge * cm, hip_far * cm, y_hip * cm)
-            c.line(ridge_left * cm, ridge * cm, valley_far * cm,
-                   y_valley * cm)
+        c.line(ridge_left * cm, ridge * cm, x_far * cm, y_low * cm)
+        c.line(ridge_left * cm, ridge * cm, x_far * cm, y_high * cm)
         c.restoreState()
 
     return Piece(name, "roof", width * cm, height * cm, body, outline,
@@ -1833,12 +1911,18 @@ def make_l_pieces(cfg, wall_material, roof_material):
     `length_cm` long, the second one `wing_length_cm`, and they meet in a
     corner. Seen from above the walls go around like this:
 
-        wall 6 ... the long outside wall of the second wing
+        wall 6 ... the long outside wall of the second wing; the end of it
+                   that is next to the first wing has a gable
         wall 5 ... the gable of the second wing
         wall 4 ... inside, along the second wing
         wall 3 ... inside, along the first wing
         wall 2 ... the gable of the first wing
         wall 1 ... the long outside wall of the first wing
+
+    The gabled roof has two pieces. The first is a long roof over the whole
+    first wing: it rests on the gable of wall 2 and on the gable at the end
+    of wall 6. The second one covers the second wing: it rests on the gable
+    of wall 5 and, at the other end, on the long roof.
     """
     width, length, wing = cfg.width_cm, cfg.length_cm, cfg.wing_length_cm
     gabled = cfg.roof_type == "gabled"
@@ -1846,24 +1930,32 @@ def make_l_pieces(cfg, wall_material, roof_material):
                  (width, wing), (0, wing)]
 
     lengths = [length, width, length - width, wing - width, width, wing]
-    gables = {1, 4} if gabled else set()
+    gables = {1, 4, 5} if gabled else set()
     door_wall = 1 if cfg.door_on == "short" else 0
 
     pieces = []
     for i, wall_length in enumerate(lengths):
         piece = wall_piece(cfg, f"wall {i + 1}", "wall", wall_length,
                            cfg.height_cm, i in gables, i == door_wall,
-                           wall_material, seed_id=20 + i, per_house=1)
+                           wall_material, seed_id=20 + i, per_house=1,
+                           gable_span_cm=width if i == 5 else None)
         corners = (chr(65 + (i - 1) % 6), chr(65 + i))
         pieces.append(replace(piece, suffix=f" {i + 1}", joints=corners))
 
     if gabled:
-        pieces.append(wing_roof_piece(cfg, roof_material, "roof wing A", " A",
-                                      length, hip_below=True, glue_tabs=True,
-                                      seed_id=3))
-        pieces.append(wing_roof_piece(cfg, roof_material, "roof wing B", " B",
-                                      wing, hip_below=False, glue_tabs=False,
-                                      seed_id=4))
+        # Where the second roof is glued on the long one: the two valleys,
+        # from the point where the ridges meet to the eaves, on the slope
+        # that faces the second wing
+        side = slope_side_cm(cfg, width)
+        margin = cfg.roof_margin_cm
+        ridge_y = side + cfg.roof_overhang_cm + margin
+        meeting = (margin + width / 2, ridge_y)
+        guides = [(meeting, (margin, ridge_y + side)),
+                  (meeting, (margin + width, ridge_y + side))]
+        long_roof = roof_piece(cfg, roof_material, seed_id=3, guides=guides)
+        pieces.append(replace(long_roof, name="roof wing A", suffix=" A"))
+        pieces.append(valley_roof_piece(cfg, roof_material, "roof wing B",
+                                        " B", wing, seed_id=4))
     else:
         pieces.append(flat_roof_piece(cfg, roof_material, footprint,
                                       seed_id=3))
