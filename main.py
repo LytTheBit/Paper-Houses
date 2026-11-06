@@ -68,9 +68,12 @@ class Config:
     roof_type: str = _f(
         "gabled", "shape of the roof: gabled (two slopes) or flat",
         choices=["gabled", "flat"])
-    top_bottom_tabs: bool = _f(
-        True, "print the tabs at the top and at the bottom of the walls "
-              "(the side tabs are always printed)")
+    top_tabs: bool = _f(
+        True, "print the tabs at the top of the walls (the side tabs are "
+              "always printed)")
+    bottom_tabs: bool = _f(
+        True, "print the tabs at the bottom of the walls (the side tabs are "
+              "always printed)")
     tab_corners: str = _f(
         "cut", "corners of the tabs at the top and at the bottom of the "
                "walls and of the flaps of the gables: 'cut' cuts the whole "
@@ -110,10 +113,16 @@ class Config:
         cli=False)
 
     # --- Door and windows ---
-    door_and_windows: bool = _f(
-        True, "draw door and windows", group="Door & windows")
+    door: bool = _f(True, "draw the door", group="Door & windows")
+    windows: bool = _f(
+        True, "draw the windows (and the small round one in the gable)",
+        group="Door & windows")
     door_on: str = _f("short", "side of the house with the door",
                       choices=["short", "long"], group="Door & windows")
+    door_position: str = _f(
+        "center", "where the door is on its wall, seen from outside: in the "
+                  "centre, or towards the left or the right",
+        choices=["center", "left", "right"], group="Door & windows")
     one_door_per_house: bool = _f(
         True, "only one wall per house gets the door (the other gets a "
               "window in its place)", group="Door & windows")
@@ -300,6 +309,8 @@ def validate(cfg):
         errors.append(t("err.roof_type", value=cfg.roof_type))
     if cfg.tab_corners not in ("cut", "square"):
         errors.append(t("err.tab_corners", value=cfg.tab_corners))
+    if cfg.door_position not in ("center", "left", "right"):
+        errors.append(t("err.door_position", value=cfg.door_position))
     if cfg.house_shape == "L" and (
             cfg.length_cm < cfg.width_cm + cfg.cell_cm - 0.01
             or cfg.wing_length_cm < cfg.width_cm + cfg.cell_cm - 0.01):
@@ -907,6 +918,38 @@ def door_width(cfg, width_cm):
                   + t * (cfg.door_width_max_m - cfg.door_width_min_m))
 
 
+def shifted_door_positions(cfg, width_cm, door_present, window_w, margin):
+    """The openings of a wall whose door is not in the centre.
+
+    The door is a quarter of the wall from the left (or from the right) edge:
+    on a wall 6 squares wide it is around the second (or the fifth) square.
+    The windows fill what is left on each side of the door, spread the same
+    way as on the other walls: about `window_spacing_cells` squares apart.
+    Returns [(type, offset from the centre in points)].
+    """
+    width = width_cm * cm
+    door_w = door_width(cfg, width_cm)
+    fraction = 0.25 if cfg.door_position == "left" else 0.75
+    centre = fraction * width
+    # not too close to the edge of the wall
+    centre = min(max(centre, door_w / 2 + margin), width - door_w / 2 - margin)
+
+    out = [("door" if door_present else "window", centre - width / 2)]
+
+    spacing = cfg.window_spacing_cells * cfg.cell_cm * cm
+    min_bay = window_w + 2 * margin
+    for start, end in ((0.0, centre - door_w / 2),
+                       (centre + door_w / 2, width)):
+        span = end - start
+        n = int(span / spacing + 0.5 + 1e-9)       # round, the same on both sides
+        while n > 0 and span / n < min_bay - 1e-9:
+            n -= 1
+        for i in range(n):
+            out.append(("window", start + (i + 0.5) * span / n - width / 2))
+
+    return sorted(out, key=lambda opening: opening[1])
+
+
 def opening_positions(cfg, width_cm, door_layout, door_present):
     """
     Returns [(type, offset from the centre in points)].
@@ -922,6 +965,10 @@ def opening_positions(cfg, width_cm, door_layout, door_present):
     squares = width_cm / cfg.cell_cm
     window_w = meters(cfg, cfg.window_width_m)
     margin = 0.3 * cm
+
+    if door_layout and cfg.door_position != "center":
+        return shifted_door_positions(cfg, width_cm, door_present, window_w,
+                                      margin)
 
     centre_w = max(window_w, door_width(cfg, width_cm)) if door_layout \
         else window_w
@@ -972,10 +1019,17 @@ def draw_openings(cfg, c, x1, y1, width_cm, height_cm,
     cx0 = x1 + width_cm * cm / 2
     floor_height = height_cm * cm / floors_for(cfg, height_cm)
 
+    # Without the door there is a window where the door would be; without
+    # the windows only the door is drawn
+    door_present = door_present and cfg.door
+
     for kind, off, floor in openings_for(cfg, width_cm, height_cm,
                                          door_layout, door_present):
         cx = cx0 + off
         base = y1 + floor * floor_height
+
+        if kind == "window" and not cfg.windows:
+            continue
 
         if kind == "door":
             h = min(meters(cfg, cfg.door_height_m), floor_height - 0.4 * cm)
@@ -1208,8 +1262,8 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
     # a roof gable has no tab at the top anyway)
     partial = bool(with_roof and gable_span_cm is not None
                    and gable_span_cm < width_cm - 1e-6)
-    bottom_tab = B if cfg.top_bottom_tabs else 0
-    top_tab = B if cfg.top_bottom_tabs and (not with_roof or partial) else 0
+    bottom_tab = B if cfg.bottom_tabs else 0
+    top_tab = B if cfg.top_tabs and (not with_roof or partial) else 0
 
     # Size of the outer rectangle (inner + tabs)
     W = width_cm * cm + 2 * B
@@ -1292,6 +1346,10 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
             else:
                 near = [(base_left - gap, y2), (fx - gap, fy),
                         (fx - gap, y2 + top_tab)]
+            if cfg.tab_corners == "cut":
+                # The flaps of a gable are trapezoids too and do not reach
+                # over the tab: it is a trapezoid like the other tabs
+                near = [(base_left, y2), (base_left - cut, y2 + top_tab)]
             flat_tab = corner_points(
                 *near, (x1 + cut, y2 + top_tab),
                 (x1, y2 + top_tab - cut), (x1, y2))
@@ -1374,14 +1432,14 @@ def wall_piece(cfg, name, role, width_cm, height_cm, with_roof,
         c.restoreState()
 
         # Door and windows
-        if cfg.door_and_windows:
+        if cfg.door or cfg.windows:
             draw_openings(cfg, c, x1, y1, width_cm, height_cm,
                           has_door, door_present)
-            if with_roof:
-                # Small round window in the gable
-                radius = min(meters(cfg, cfg.round_window_radius_m),
-                             0.3 * ROOF_H)
-                round_window(c, apex_x, base_y + 0.4 * ROOF_H, radius)
+        if cfg.windows and with_roof:
+            # Small round window in the gable
+            radius = min(meters(cfg, cfg.round_window_radius_m),
+                         0.3 * ROOF_H)
+            round_window(c, apex_x, base_y + 0.4 * ROOF_H, radius)
 
         c.restoreState()
 
@@ -1649,7 +1707,7 @@ def strip_piece(cfg, material, squares, count, plan, seed_id):
 
         # A window on the two sides that face outside: lower and longer
         # than the ones of the walls
-        if cfg.door_and_windows and height >= 0.7 * cm:
+        if cfg.windows and height >= 0.7 * cm:
             for x0, x1 in ((edges[0], edges[1]), (edges[2], edges[3])):
                 face = x1 - x0
                 w = face * 0.72
@@ -1761,19 +1819,57 @@ def paving(c, w, h, origin, cell, pal, rnd):
 
 
 def flat_roof_piece(cfg, material, footprint_cm, seed_id, suffix=""):
-    """A flat roof: one sheet shaped like the house, with a margin all
-    around, paved with tiles that show the squares of the game."""
+    """A flat roof: a sheet shaped like the house, paved with tiles that show
+    the squares of the game, with a tab along every side. The tabs are
+    trapezoids (the whole corner is cut at 45 degrees, like the tabs of the
+    walls) so the corners at the outside stay empty and the tabs never
+    overlap, not even at the inside corner of an L."""
     margin = cfg.roof_margin_cm
-    outline_cm = offset_polygon(footprint_cm, margin)
-    min_x = min(x for x, _ in outline_cm)
-    min_y = min(y for _, y in outline_cm)
-    max_x = max(x for x, _ in outline_cm)
-    max_y = max(y for _, y in outline_cm)
+    min_x = min(x for x, _ in footprint_cm) - margin
+    min_y = min(y for _, y in footprint_cm) - margin
+    max_x = max(x for x, _ in footprint_cm) + margin
+    max_y = max(y for _, y in footprint_cm) + margin
 
-    shape = [((x - min_x) * cm, (y - min_y) * cm) for x, y in outline_cm]
-    house_corner = ((footprint_cm[0][0] - min_x) * cm,
-                    (footprint_cm[0][1] - min_y) * cm)
+    def to_sheet(point):
+        return ((point[0] - min_x) * cm, (point[1] - min_y) * cm)
+
+    shape = [to_sheet(point) for point in footprint_cm]
+    house_corner = shape[0]
     width, height = (max_x - min_x) * cm, (max_y - min_y) * cm
+
+    # One tab on every side. The points go counter-clockwise, so the
+    # outside is on the right of every side.
+    tabs = []
+    n = len(footprint_cm)
+    for i in range(n):
+        (ax, ay), (bx, by) = footprint_cm[i], footprint_cm[(i + 1) % n]
+        length = math.hypot(bx - ax, by - ay)
+        dx, dy = (bx - ax) / length, (by - ay) / length
+        nx, ny = dy, -dx
+
+        def turn(point_before, point, point_after):
+            """> 0 at a corner that sticks out, < 0 at one that goes in."""
+            d1 = (point[0] - point_before[0], point[1] - point_before[1])
+            d2 = (point_after[0] - point[0], point_after[1] - point[1])
+            return d1[0] * d2[1] - d1[1] * d2[0]
+
+        inset = min(margin, length / 4)
+        corner_a = turn(footprint_cm[i - 1], footprint_cm[i],
+                        footprint_cm[(i + 1) % n])
+        corner_b = turn(footprint_cm[i], footprint_cm[(i + 1) % n],
+                        footprint_cm[(i + 2) % n])
+        # Square tabs are cut only where they would overlap: at the
+        # corners that go in
+        cut_a = inset if cfg.tab_corners == "cut" or corner_a < 0 else 0
+        cut_b = inset if cfg.tab_corners == "cut" or corner_b < 0 else 0
+
+        tabs.append([
+            to_sheet((ax, ay)),
+            to_sheet((ax + nx * margin + dx * cut_a,
+                      ay + ny * margin + dy * cut_a)),
+            to_sheet((bx + nx * margin - dx * cut_b,
+                      by + ny * margin - dy * cut_b)),
+            to_sheet((bx, by))])
 
     palette = ROOF_PALETTES[material] if cfg.textures_enabled else None
 
@@ -1783,8 +1879,12 @@ def flat_roof_piece(cfg, material, footprint_cm, seed_id, suffix=""):
 
         c.saveState()
         rnd = random.Random(f"{cfg.seed}/{seed_id}/{material}")
-        fill_path(c, polygon(c, shape), palette["base"])
 
+        # The tabs have the base colour only
+        for tab in tabs:
+            fill_path(c, polygon(c, tab), palette["base"])
+
+        fill_path(c, polygon(c, shape), palette["base"])
         area = c.beginPath()
         area.moveTo(*shape[0])
         for point in shape[1:]:
@@ -1798,7 +1898,18 @@ def flat_roof_piece(cfg, material, footprint_cm, seed_id, suffix=""):
         c.saveState()
         c.setStrokeColorRGB(*cfg.line_color)
         c.setLineWidth(cfg.line_width)
+
+        # Cut: the three free sides of every tab
         c.setDash(*cfg.dash)
+        for tab in tabs:
+            p = c.beginPath()
+            p.moveTo(*tab[0])
+            for point in tab[1:]:
+                p.lineTo(*point)
+            c.drawPath(p, stroke=1, fill=0)
+
+        # Fold: the sides of the roof
+        c.setDash()
         p = c.beginPath()
         p.moveTo(*shape[0])
         for point in shape[1:]:
@@ -2207,6 +2318,7 @@ def _make_item(cfg, piece, copy_index, show_house):
         door_present = wall_index == 0
     else:
         door_present = True
+    door_present = door_present and cfg.door
 
     return Item(piece, door_present,
                 _labels(cfg, piece, wall_index, house, show_house))

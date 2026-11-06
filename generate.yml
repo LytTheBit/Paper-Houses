@@ -25,10 +25,16 @@ on:
         description: "Flat windows on the roof, for miniatures (rectangular house with a gabled roof)"
         type: boolean
         default: false
-      top_bottom_tabs:
-        description: "Print the tabs at the top and at the bottom of the walls"
-        type: boolean
-        default: true
+      tabs:
+        description: "Tabs at the top and at the bottom of the walls"
+        type: choice
+        options: [both, top, bottom, none]
+        default: both
+      openings:
+        description: "What to draw on the walls"
+        type: choice
+        options: [door and windows, only the door, only the windows, neither]
+        default: door and windows
       textures:
         description: "Paint textures (otherwise only the cutting lines)"
         type: boolean
@@ -102,7 +108,7 @@ on:
         type: string
         default: "7"
       extra_options:
-        description: "Any other option, e.g. --no-door-and-windows --copy-gap-cm 0.3 (see README)"
+        description: "Any other option, e.g. --door-position left --copy-gap-cm 0.3 (see README)"
         type: string
         default: ""
 
@@ -130,7 +136,8 @@ jobs:
           IN_SHAPE: ${{ inputs.house_shape }}
           IN_ROOF_TYPE: ${{ inputs.roof_type }}
           IN_ROOF_WINDOWS: ${{ inputs.roof_windows }}
-          IN_TABS: ${{ inputs.top_bottom_tabs }}
+          IN_TABS: ${{ inputs.tabs }}
+          IN_OPENINGS: ${{ inputs.openings }}
           IN_WING: ${{ inputs.wing_length_cm }}
           IN_TEXTURES: ${{ inputs.textures }}
           IN_WALL: ${{ inputs.wall_material }}
@@ -157,6 +164,20 @@ jobs:
             if [ "$2" = "true" ]; then echo "--$1"; else echo "--no-$1"; fi
           }
 
+          # The choices that stand for two on/off options
+          case "$IN_TABS" in
+            both)   tabs_args=(--top-tabs --bottom-tabs) ;;
+            top)    tabs_args=(--top-tabs --no-bottom-tabs) ;;
+            bottom) tabs_args=(--no-top-tabs --bottom-tabs) ;;
+            *)      tabs_args=(--no-top-tabs --no-bottom-tabs) ;;
+          esac
+          case "$IN_OPENINGS" in
+            "door and windows") openings_args=(--door --windows) ;;
+            "only the door")    openings_args=(--door --no-windows) ;;
+            "only the windows") openings_args=(--no-door --windows) ;;
+            *)                  openings_args=(--no-door --no-windows) ;;
+          esac
+
           args=(
             --output-dir output
             "$(flag textures-enabled "$IN_TEXTURES")"
@@ -176,7 +197,8 @@ jobs:
             --house-shape "$IN_SHAPE"
             --roof-type "$IN_ROOF_TYPE"
             "$(flag roof-windows "$IN_ROOF_WINDOWS")"
-            "$(flag top-bottom-tabs "$IN_TABS")"
+            "${tabs_args[@]}"
+            "${openings_args[@]}"
             --height-cm "$IN_HEIGHT"
             --roof-height-cm "$IN_ROOF_HEIGHT"
             --seed "$IN_SEED"

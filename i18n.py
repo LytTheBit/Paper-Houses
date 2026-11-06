@@ -120,6 +120,8 @@ STRINGS["en"] = {
     "err.roof_type": "roof_type must be 'gabled' or 'flat' (got {value!r})",
     "err.tab_corners": "tab_corners must be 'cut' or 'square' "
                        "(got {value!r})",
+    "err.door_position": "door_position must be 'center', 'left' or 'right' "
+                         "(got {value!r})",
     "err.wing_short": "in an L-shaped house both wings must be longer than "
                       "the width of the house, by at least one square",
     "err.positive": "{name} must be positive (got {value})",
@@ -183,6 +185,10 @@ STRINGS["en"] = {
     "card.picker": "Pick it on the grid",
     "card.amount": "How many houses",
     "card.shape": "Shape and roof",
+    "ui.door_position": "Door position",
+    "ui.pos_center": "Centre",
+    "ui.pos_left": "Left",
+    "ui.pos_right": "Right",
     "ui.shape": "House shape",
     "ui.shape_rect": "Rectangle",
     "ui.shape_l": "L shape",
@@ -298,8 +304,6 @@ STRINGS["en"] = {
     "label.draw_roof_base": "Base line of the gable",
     "help.draw_roof_base": "also draw the base of the gable triangle "
                            "(fold line)",
-    "label.door_and_windows": "Door and windows",
-    "help.door_and_windows": "draw door and windows",
     "label.door_on": "Door on",
     "help.door_on": "side of the house with the door",
     "label.one_door_per_house": "One door per house",
@@ -380,6 +384,19 @@ STRINGS["en"] = {
                            "measured along the outside of the house",
     "label.roof_type": "Roof shape",
     "help.roof_type": "shape of the roof: gabled (two slopes) or flat",
+    "label.door": "Door",
+    "help.door": "draw the door",
+    "label.windows": "Windows",
+    "help.windows": "draw the windows (and the small round one in the gable)",
+    "label.door_position": "Door position",
+    "help.door_position": "where the door is on its wall, seen from outside: "
+                          "in the centre, or towards the left or the right",
+    "label.top_tabs": "Top tabs",
+    "help.top_tabs": "print the tabs at the top of the walls (the side tabs "
+                     "are always printed)",
+    "label.bottom_tabs": "Bottom tabs",
+    "help.bottom_tabs": "print the tabs at the bottom of the walls (the "
+                        "side tabs are always printed)",
     "label.tab_corners": "Tab corners",
     "help.tab_corners": "corners of the tabs at the top and at the bottom "
                         "of the walls and of the flaps of the gables: "
@@ -387,10 +404,6 @@ STRINGS["en"] = {
                         "trapezoid), so neighbouring pieces never overlap; "
                         "'square' keeps them square and cuts only the ones "
                         "that would overlap",
-    "label.top_bottom_tabs": "Top and bottom tabs",
-    "help.top_bottom_tabs": "print the tabs at the top and at the bottom "
-                            "of the walls (the side tabs are always "
-                            "printed)",
 }
 
 # ============================================================
@@ -469,6 +482,8 @@ STRINGS["it"] = {
                      "(ricevuto {value!r})",
     "err.tab_corners": "tab_corners deve essere 'cut' o 'square' "
                        "(ricevuto {value!r})",
+    "err.door_position": "door_position deve essere 'center', 'left' o "
+                         "'right' (ricevuto {value!r})",
     "err.wing_short": "in una casa a L le due ali devono essere più lunghe "
                       "della larghezza della casa, di almeno una casella",
     "err.positive": "{name} deve essere positivo (ricevuto {value})",
@@ -532,6 +547,10 @@ STRINGS["it"] = {
     "card.picker": "Sceglila sulla griglia",
     "card.amount": "Quante case",
     "card.shape": "Forma e tetto",
+    "ui.door_position": "Posizione della porta",
+    "ui.pos_center": "Al centro",
+    "ui.pos_left": "A sinistra",
+    "ui.pos_right": "A destra",
     "ui.shape": "Forma della casa",
     "ui.shape_rect": "Rettangolo",
     "ui.shape_l": "Ad L",
@@ -649,8 +668,6 @@ STRINGS["it"] = {
     "label.draw_roof_base": "Linea di base del timpano",
     "help.draw_roof_base": "disegna anche la base del triangolo del "
                            "timpano (linea di piega)",
-    "label.door_and_windows": "Porta e finestre",
-    "help.door_and_windows": "disegna porta e finestre",
     "label.door_on": "Porta sul lato",
     "help.door_on": "lato della casa con la porta",
     "label.one_door_per_house": "Una porta per casa",
@@ -736,6 +753,20 @@ STRINGS["it"] = {
                            "seconda ala, misurata lungo l'esterno della casa",
     "label.roof_type": "Forma del tetto",
     "help.roof_type": "forma del tetto: a due falde oppure piatto",
+    "label.door": "Porta",
+    "help.door": "disegna la porta",
+    "label.windows": "Finestre",
+    "help.windows": "disegna le finestre (e quella tonda del timpano)",
+    "label.door_position": "Posizione della porta",
+    "help.door_position": "dove sta la porta sulla sua parete, vista da "
+                          "fuori: al centro, oppure verso sinistra o verso "
+                          "destra",
+    "label.top_tabs": "Linguette in alto",
+    "help.top_tabs": "stampa le linguette in alto delle pareti (quelle "
+                     "laterali si stampano sempre)",
+    "label.bottom_tabs": "Linguette in basso",
+    "help.bottom_tabs": "stampa le linguette in basso delle pareti (quelle "
+                        "laterali si stampano sempre)",
     "label.tab_corners": "Angoli delle linguette",
     "help.tab_corners": "angoli delle linguette in alto e in basso delle "
                         "pareti e delle alette dei timpani: 'cut' taglia "
@@ -743,7 +774,4 @@ STRINGS["it"] = {
                         "pezzi vicini non si sovrappongono mai; 'square' li "
                         "lascia quadrati e taglia solo quelli che si "
                         "sovrapporrebbero",
-    "label.top_bottom_tabs": "Linguette in alto e in basso",
-    "help.top_bottom_tabs": "stampa le linguette in alto e in basso delle "
-                            "pareti (quelle laterali si stampano sempre)",
 }

@@ -143,12 +143,15 @@ def format_value(value):
 
 
 # Settings that do nothing in some situations are greyed out.
-DOOR_SETTINGS = {
-    "door_on", "one_door_per_house", "door_arched", "door_width_min_m",
-    "door_width_max_m", "door_height_m", "window_width_m", "window_height_m",
-    "window_sill_m", "round_window_radius_m", "floor_height_cm",
-    "window_spacing_cells",
+DOOR_ONLY = {
+    "door_on", "door_position", "one_door_per_house", "door_arched",
+    "door_width_min_m", "door_width_max_m", "door_height_m",
 }
+WINDOW_ONLY = {
+    "window_width_m", "window_height_m", "window_sill_m",
+    "round_window_radius_m", "floor_height_cm", "window_spacing_cells",
+}
+DOOR_SETTINGS = DOOR_ONLY | WINDOW_ONLY
 TEXTURE_SETTINGS = {
     "wall_material", "roof_material", "generate_all_variants", "seed",
     "texture_on_roof_overhang", "reuse_textures",
@@ -185,8 +188,10 @@ def disabled_fields(values):
     elif values["generate_all_variants"]:
         off |= {"wall_material", "roof_material"}
 
-    if not values["door_and_windows"]:
-        off |= DOOR_SETTINGS
+    if not values.get("door", True):
+        off |= DOOR_ONLY
+    if not values.get("windows", True):
+        off |= WINDOW_ONLY
 
     if not str(values["houses"]).strip():
         off |= {"mix_pieces", "houses_spin"}
@@ -194,7 +199,7 @@ def disabled_fields(values):
     if values["house_shape"] != "L":
         off.add("wing_length_cm")
 
-    if not values.get("top_bottom_tabs", True):
+    if not (values.get("top_tabs", True) or values.get("bottom_tabs", True)):
         off.add("tab_corners")
 
     if values["roof_type"] == "flat":
@@ -1460,7 +1465,7 @@ class App:
         body.columnconfigure(0, weight=1)
 
         door = self._card(body, self.t("card.door"), row=0)
-        self._check(door, "door_and_windows", 1)
+        self._check(door, "door", 1)
 
         label = ttk.Label(door, text=self.t("ui.door_side"),
                           style="Card.TLabel")
@@ -1469,27 +1474,38 @@ class App:
                      [("short", self.t("ui.side_short")),
                       ("long", self.t("ui.side_long"))])
         self._reg("door_on", label)
-        self._check(door, "one_door_per_house", 3, pady=(8, 2))
-        self._check(door, "door_arched", 4)
+
+        label = ttk.Label(door, text=self.t("ui.door_position"),
+                          style="Card.TLabel")
+        label.grid(row=3, column=0, sticky="w", padx=(0, 16), pady=(2, 2))
+        self._radios(door, "door_position", 3,
+                     [("center", self.t("ui.pos_center")),
+                      ("left", self.t("ui.pos_left")),
+                      ("right", self.t("ui.pos_right"))])
+        self._reg("door_position", label)
+
+        self._check(door, "one_door_per_house", 4, pady=(8, 2))
+        self._check(door, "door_arched", 5)
 
         windows = self._card(body, self.t("card.windows"), row=1)
-        self._square_row(windows, 1, "floor_height_cm", 0.5)
+        self._check(windows, "windows", 1)
+        self._square_row(windows, 2, "floor_height_cm", 0.5)
         label = ttk.Label(windows, text=self.t("ui.window_spacing"),
                           style="Card.TLabel")
-        label.grid(row=2, column=0, sticky="w", padx=(0, 16), pady=5)
+        label.grid(row=3, column=0, sticky="w", padx=(0, 16), pady=5)
         spin = ttk.Spinbox(windows, textvariable=self.vars["window_spacing_cells"],
                            from_=0.5, to=20, increment=0.5, width=7)
-        spin.grid(row=2, column=1, sticky="w", pady=5)
+        spin.grid(row=3, column=1, sticky="w", pady=5)
         self._reg("window_spacing_cells", label, spin)
         self._help(self.describe("window_spacing_cells"), label, spin)
 
-        self._check(windows, "roof_windows", 3, pady=(12, 0))
+        self._check(windows, "roof_windows", 4, pady=(12, 0))
         ttk.Label(windows, text=self.t("ui.roof_windows_hint"),
                   style="Muted.Card.TLabel").grid(
-            row=4, column=0, columnspan=4, sticky="w", padx=(30, 0))
+            row=5, column=0, columnspan=4, sticky="w", padx=(30, 0))
         ttk.Label(windows, text=self.t("ui.more_in_advanced"),
                   style="Muted.Card.TLabel").grid(
-            row=5, column=0, columnspan=4, sticky="w", pady=(10, 0))
+            row=6, column=0, columnspan=4, sticky="w", pady=(10, 0))
 
     # ---- Pages and files page ----
 
@@ -1709,8 +1725,8 @@ class App:
             return
         values = {name: self.vars[name].get() for name in (
             "generate_full_house", "textures_enabled", "generate_all_variants",
-            "door_and_windows", "houses", "house_shape", "roof_type",
-            "roof_windows", "top_bottom_tabs")}
+            "door", "windows", "houses", "house_shape", "roof_type",
+            "roof_windows", "top_tabs", "bottom_tabs")}
         off = disabled_fields(values)
 
         for name, widgets in self.widgets.items():
