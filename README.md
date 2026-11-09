@@ -2,50 +2,34 @@
 
 Procedural, printable paper houses for tabletop RPGs (built for D&D 5e).
 
-A single Python script draws the cutting and folding templates for a small house, **sized on the 2.5 cm battle-map grid**, and paints them with procedurally generated textures (brick, stone, wood, marble or ice walls; tile, blue tile, wood, thatch or stone roofs), complete with a door and windows. The house can be a rectangle or an L, with a gabled or a flat roof, and the roof can have flat windows where miniatures can stand. Everything is drawn as vector graphics straight into the PDF, so it stays sharp at any print size and needs nothing but `reportlab`.
+A Python script draws the cutting and folding templates for a small house, **sized on the 2.5 cm battle-map grid**, and paints them with procedurally generated textures, complete with a door and windows. The house can be a rectangle or an L, with a gabled or a flat roof, and the roof can have flat windows where miniatures can stand. Everything is drawn as vector graphics straight into the PDF, so it stays sharp at any print size and needs nothing but `reportlab`.
 
-![A4 sheet with four textured short walls](assets/sheet_brick_tiles_short_wall.png)
+![A4 sheet with a textured short wall](assets/sheet_brick_tiles_short_wall.png)
 
 ## Features
 
 - **Grid-accurate**: wall sizes are the *inner* rectangle, measured in 2.5 cm game squares. The 1 cm tabs are added outside and never count towards the house size.
-- **Procedural textures**, deterministic for a given `seed`:
-  - Walls: brick, stone, wood (horizontal planks), marble (white blocks with grey veins), ice (blue blocks with highlights and cracks)
-  - Roofs: clay tiles, blue tiles, wood shingles, thatch, stone slabs
-  - Textures only cover the area inside the solid lines. Tabs get the flat base colour only, which makes cutting and gluing easier.
-- **Rectangular or L-shaped houses**, with a **gabled or a flat roof**. A flat roof is paved with tiles that mark the 2.5 cm game squares, so miniatures can stand on it.
-- **Roof windows**: flat spots halfway down each slope of the roof, supported by a strip of paper, where miniatures can stand (see below).
-- **A window to set everything**: run `python main.py` and a window opens, with a page for each group of settings, a log, presets and a button that copies the equivalent command. It speaks English and Italian.
-- **Nothing to install**: run it from the Actions tab of the GitHub repository, fill a form and download the PDFs (see below).
-- **Door and windows scaled to the story world**: 2.5 cm = 1.5 m. Doors are 1 m to 1.5 m wide depending on the wall length, windows are 0.8 x 0.9 m. Arched plank door with frame, hinges and handle, framed windows with sills, round window in the gable. Windows are spread evenly along each wall, with one floor of windows for every 5 cm of wall height.
-- **Door on the short or the long side**, your choice.
-- **Whole-house mode**: the walls and the roof, as separate PDFs plus one combined PDF (by default only the combined one).
-- **Flexible page packing** for the combined PDF, on A4 or US Letter:
-  - By default every page is filled with as many copies of one piece as fit, rotating pieces by 90 degrees when it helps.
-  - With `--houses N` you get exactly the pieces for N houses, and with `--mix-pieces` different pieces share the same pages to save paper.
-- **One door per house**: the door is assigned house by house, so N houses get N doors. The other wall of the pair gets a window in its place.
-- **Corner letters** on the side tabs: the two tabs with the same letter (A to D for a rectangle, A to F for an L, prefixed by the house number when you print several houses) are glued together.
-- **Tabs you can leave out**: the tabs at the top and at the bottom of the walls only help the shape; you can print the walls without them.
-- **Tabs that never overlap**: the whole corner of the tabs at the top and at the bottom, and of the flaps along the gables, is cut at 45 degrees, so they are trapezoids and the tabs of two neighbouring pieces cannot overlap (the side tabs stay square). You can keep them square: then only the tabs that would overlap are cut.
-- **Calibration ruler**: a 5 cm line on every page of the combined PDF, to check that the print is at the right scale.
-- **Readable marks**: the half-height mark and the letters change to black or white when they would be hard to see on the wall colour.
-- **Textures are drawn once per PDF** and reused for every copy, which roughly halves the size of a textured file with two houses.
+- **Procedural textures**, the same every time for a given `seed`, only inside the solid lines (the tabs have the base colour, which makes cutting and gluing easier):
+  - 8 walls: brick, stone, wood, marble, ice, earth, fieldstone, stucco
+  - 8 roofs: tiles (red, blue, green, yellow), wood shingles, thatch, stone slabs, grass
+- **Door and windows in several styles**: windows can be classic, stone, castle slits (no glass) or stained glass; the door can be plain wood, with iron bands, or a studded gate. Door and windows can be turned off separately.
+- **The door can be in the centre, on the left or on the right** of its wall, and on the short or the long side of the house.
+- **Rectangular or L-shaped houses**, with a **gabled or a flat roof**. A flat roof is paved with tiles that mark the 2.5 cm squares, so miniatures can stand on it.
+- **Roof windows**: flat spots halfway down each slope of the roof, supported by a strip of paper, where miniatures can stand.
+- **A window to set everything**: run `python main.py` and a window opens, with a page for each group of settings, presets and a button that copies the equivalent command. English and Italian.
+- **Nothing to install**: run it from the Actions tab of the GitHub repository, fill a form and download the PDFs.
+- **Flexible page packing** on A4 or US Letter: by default every page is filled with copies of one piece (rotated when it helps); with `--houses N` you get exactly the pieces for N houses, and with `--mix-pieces` different pieces share the pages.
+- **One door per house**: the door is assigned house by house, so N houses get N doors; the other wall of the pair gets ordinary windows.
+- **Corner letters** on the side tabs: the two tabs with the same letter are glued together (`A` to `D` on a rectangle, `A` to `F` on an L, with the house number when you print several houses).
+- **Tabs that never overlap**: the tabs at the top and at the bottom of the walls, the flaps of the gables and the tabs of a flat roof are trapezoids, and you can leave out the top or the bottom ones.
+- **Calibration ruler**: a 5 cm line on every page, to check the scale of the print.
 - **Checks**: warnings for sizes that are not multiples of 2.5 cm, clear messages for wrong settings, and a hint when a PDF is locked by a viewer.
-- Optional: generate all 25 wall/roof material combinations in one run.
 
 ## Gallery
 
-Wall and roof materials (top: brick, stone, wood, marble, ice walls; bottom: tiles, blue tiles, wood, thatch, stone roofs):
+Top: brick, stone, wood, marble, ice, earth, fieldstone and stucco walls. Bottom: red, blue, green and yellow tiles, wood, thatch, stone and grass roofs.
 
 ![Wall and roof materials](assets/materials_gallery.png)
-
-The long wall carries the door. With the "one door per house" option, the second copy on the sheet gets a window instead:
-
-![Long wall sheet, brick, with and without door](assets/sheet_brick_long_wall.png)
-
-The short wall (with the roof gable and its round window) in stone and in wood:
-
-![Short wall in stone and wood](assets/short_wall_stone_wood.png)
 
 ## How to read the sheets
 
@@ -53,82 +37,47 @@ The short wall (with the roof gable and its round window) in stone and in wood:
 | --- | --- |
 | Solid black | **Fold** |
 | Dashed black | **Cut** |
-| Dashed mark half-way up each side tab (red, or white/black on dark or red walls) | Marks where to cut for the interlocking joint |
-| Letter on a side tab (`A` to `D`, or `A` to `F` for an L, e.g. `2B` with several houses) | The two tabs with the same letter go together |
+| Dashed mark half-way up each side tab | Marks where to cut for the interlocking joint |
+| Letter on a side tab | The two tabs with the same letter go together |
 
-The corners between two side tabs are left blank: they are cut away and do not appear in the folded house. The dashed outline follows the resulting cross shape.
-
-With textures disabled (the default) you get just the line templates:
-
-![Plain line template](assets/blank_template.png)
+With textures off (the default) you get just the line templates.
 
 ## Roof windows
 
-Turn on **Roof windows** (page *Doors & windows*, or `--roof-windows`) to get flat spots on the roof, where miniatures can stand. They work on a rectangular house with a gabled roof, at least 3 squares long.
+Turn on **Roof windows** (page *Doors & windows*, or `--roof-windows`) to get flat spots on the roof where miniatures can stand. They work on a rectangular house with a gabled roof, at least 3 squares long.
 
 ![The roof sheet with four flaps and two strips](assets/roof_windows_sheets.png)
 
-**How it is built.** On each slope of the roof, halfway between the ridge and the eaves, a flap is cut on three sides (dashed) and folds along the fourth, the one towards the ridge (solid). The flap is lifted until it lies flat, on top of a **strip of paper folded into a rectangle**. The strip is the wall under the flap and its support. It goes from the window on one slope to the window on the other, under the part of the roof near the ridge that is left whole. The two sides of the strip that face outside show a window.
+On each slope, halfway between the ridge and the eaves, a flap is cut on three sides (dashed) and folds along the fourth, the one towards the ridge (solid). The flap is lifted until it lies flat, on top of a **strip of paper folded into a rectangle**: the strip is the wall under the flap and its support. It goes from the window on one slope to the window on the other, under the part of the roof near the ridge that is left whole. The two sides of the strip that face outside show a window.
 
 ![Section of the roof windows](assets/roof_windows_section.png)
 
-**Where the windows go.** The first and the last square of the house stay free; in between the windows take every other square, always symmetric:
+The first and the last square of the house stay free; in between the windows take every other square, always symmetric: 3 squares give one window in the middle, 4 give two joined in the middle, 5 give two with an empty square between them.
 
-| Squares along the house | Windows |
-| --- | --- |
-| 3 | one in the middle |
-| 4 | two joined in the middle (one strip, 5 cm wide) |
-| 5 | two, with an empty square between them |
-| 6 | the second and the fifth square |
-| 7 | the second, fourth and sixth square |
+The measures are computed. With `c` one square plus a little room (`roof_window_clearance_cm`, 2.6 cm) and `g` the distance of the fold from the ridge (halfway by default, change it with `roof_window_position` from `0` at the ridge to `1` at the eaves), the cut is as deep along the slope as the hypotenuse `c / cos(roof angle)`, the strip is `sqrt(hypotenuse² - c²)` high and `2 · (g + c)` long, and as wide as the window.
 
-**The measures** (all computed, nothing to type):
-
-- `c`: one square plus a little room (`roof_window_clearance_cm`, 1 mm), 2.6 cm by default. It is how far the window reaches from the fold, measured flat.
-- `g`: how far the fold is from the ridge, measured flat. By default the window is halfway: `g = (half the width - c) / 2`. Change it with `roof_window_position`, from `0` (at the ridge) to `1` (at the eaves).
-- The depth of the cut along the slope is the hypotenuse of a right triangle with the leg `c`, and the **height of the strip** is the other leg: `h = sqrt(hypotenuse² - c²)`.
-- The strip is `2 · (g + c)` long across the roof and as wide as the window (2.5 cm, or 5 cm for two joined windows).
-
-**Assembly.**
-
-1. Cut the three dashed sides of every flap on the roof sheet. Do not cut the fold: the flap stays attached.
-2. Fold each strip along the solid lines into a rectangle and glue the tab.
-3. Before putting the roof on the walls, slip every strip under the roof so that its two window faces sit at the lower edge of the two flaps, one on each slope.
-4. Lift the flaps flat and glue them on the top edge of the strip. A flap is a little longer than the strip is wide, so it sticks out slightly at the lower edge.
+**Assembly.** Cut the three dashed sides of every flap (not the fold). Fold each strip into a rectangle and glue the tab. Before putting the roof on the walls, slip every strip under the roof, with its two window faces at the lower edge of the two flaps, then lift the flaps flat and glue them on the top edge of the strip. A flap is a little longer than the strip is wide, so it sticks out slightly.
 
 ## L-shaped houses
 
-Choose **L shape** on the page *House*, or **right-click on the grid**, as far down as the second wing should go (see the window below). On the command line it is `--house-shape L`. The house is made of two wings with the same width:
-
-- the first wing is `length_cm` long, the second one `wing_length_cm` (the length of the outside wall, so both include the corner square);
-- both must be at least one square longer than the width of the house.
+Choose **L shape** on the page *House*, or **right-click on the grid** as far down as the second wing should go. On the command line: `--house-shape L`. The house is made of two wings of the same width: the first is `length_cm` long, the second one `wing_length_cm` (the length of the outside wall, so both include the corner square), and both must be at least one square longer than the width of the house.
 
 ![The pieces of an L-shaped house](assets/house_l_sheets.png)
 
-There are **six walls**, numbered around the house, with the corner letters `A` to `F`: wall 1 is the long outside wall of the first wing, wall 2 its gable (with the door when `door_on` is `short`), wall 3 and wall 4 are inside, wall 5 is the gable of the second wing and wall 6 its long outside wall. Wall 6 has a gable too, but only at the end that is next to the first wing, where the long roof ends.
+There are **six walls**, numbered around the house, with the corner letters `A` to `F`. Wall 1 is the long outside wall of the first wing, wall 2 its gable (with the door when `door_on` is `short`), walls 3 and 4 are inside, wall 5 is the gable of the second wing and wall 6 its long outside wall, which has a gable too, but only at the end next to the first wing.
 
-The gabled roof is made of **two roofs, and each one rests on two supports**:
-
-- **Roof A** is a long roof over the whole first wing. It rests on the gable of wall 2 and on the gable at the end of wall 6. Two thin dotted lines on one of its slopes, the one that faces the second wing, show where roof B is glued.
-- **Roof B** covers the second wing. It rests on the gable of wall 5 and, at the other end, on roof A: the end of each slope is cut at an angle, along the valley where the two roofs meet, and has a tab to glue under roof A. The ridge of roof B ends where it meets the ridge of roof A, at the point where the two dotted lines meet.
-
-Glue roof A first, then roof B along the dotted lines. With a flat roof there is a single roof sheet shaped like an L.
+The gabled roof is made of **two roofs, and each one rests on two supports**. **Roof A** is a long roof over the whole first wing: it rests on the gable of wall 2 and on the one at the end of wall 6. Two thin dotted lines on one of its slopes show where roof B is glued. **Roof B** covers the second wing: it rests on the gable of wall 5 and, at the other end, on roof A: the end of each slope is cut at an angle, along the valley where the two roofs meet, and has a tab to glue under roof A. Glue roof A first, then roof B along the dotted lines.
 
 ## Flat roofs
 
-Choose **Flat** as the roof (`--roof-type flat`). The short walls lose their gable, and the roof is a single sheet with a margin all around (`roof_margin_cm`), paved with tiles. There are two tiles to a side of a game square, a thicker joint along every square, a small cross at every corner and squares that are a little lighter and darker, like a chess board. The material of the roof gives the colour of the tiles.
+Choose **Flat** as the roof (`--roof-type flat`). The short walls lose their gable and the roof is one sheet shaped like the house, paved with tiles: two tiles to a side of a game square, a thicker joint along every square, a small cross at every corner and squares a little lighter and darker, like a chess board. It has a **tab along every side**, a trapezoid like the tabs of the walls (`roof_margin_cm` is their depth), so there is no border at the outside corners.
 
 ![Flat roof with the squares of the game](assets/house_flat_roof_sheets.png)
 
 ## Tabs
 
-**Corners.** The tabs at the top and at the bottom of the walls, and the flaps along the sloping sides of the gables, have the whole corner cut at 45 degrees (`tab_corners` is `cut`): they are trapezoids, not rectangles. This way they never overlap with a neighbouring tab or flap, for example on the wall of an L that has a gable only at one end. With `--tab-corners square` the tabs and the flaps keep their square corners, and the program cuts only the ones that would overlap (in that wall, the flat tab next to the flap of the gable). The side tabs are always square.
-
-## Walls without the top and bottom tabs
-
-The tabs at the top and at the bottom of the walls help to keep the shape, but the house stands without them. Turn off **Top and bottom tabs** (page *Advanced*, or `--no-top-bottom-tabs`) to print the walls with the side tabs only. They are smaller, so more fit on a page.
-
-![Walls without the top and bottom tabs](assets/no_top_bottom_tabs.png)
+- **Corners** (`tab_corners`): by default the whole corner of the tabs at the top and at the bottom of the walls, of the flaps along the gables and of the flat roof is cut at 45 degrees, so they are trapezoids and never overlap a neighbour. With `--tab-corners square` they keep square corners and only the ones that would overlap are cut.
+- **Top and bottom tabs** can be left out separately (`--no-top-tabs`, `--no-bottom-tabs`). The side tabs are always printed.
 
 ## Scale
 
@@ -138,39 +87,23 @@ The tabs at the top and at the bottom of the walls help to keep the shape, but t
 | 5 cm wall height (default) | 3 m, one storey |
 | 7.5 x 12.5 cm footprint (default) | 3 x 5 squares |
 
+Doors are 1 m to 1.5 m wide depending on the wall length, windows are 0.8 x 0.9 m, with one floor of windows for every 5 cm of wall height. With the door on the left (or right) it is a quarter of the wall from the edge: on a wall 6 squares wide, around the second (or the fifth) square, and the windows fill what is left on each side.
+
 ## Run it on GitHub (nothing to install)
 
-You can generate the PDFs without downloading anything, from the repository page:
-
-1. Open the **Actions** tab.
+1. Open the **Actions** tab of the repository.
 2. Pick **Generate paper houses** in the left sidebar.
 3. Press **Run workflow**, fill the form and confirm.
-4. After about a minute the run turns green. Open it and download the `paper-houses-N` file at the bottom of the page: a zip with the PDFs. The run page also lists what is on every page and how many walls have the door.
+4. After about a minute the run turns green. Open it and download the `paper-houses-N` file at the bottom: a zip with the PDFs. The run page also lists what is on every page.
 
-| Field | What it does |
-| --- | --- |
-| Number of houses | Exactly the pieces for that many houses. Leave it empty to fill every page with copies of one piece |
-| House shape, second wing | Rectangle or L; the length of the second wing of the L (at least one square longer than the width of the house) |
-| Roof shape, roof windows | Gabled or flat; flat windows on a gabled roof, for miniatures |
-| Paint textures, wall material, roof material | Look of the house. "Every wall/roof combination" makes all 25 versions (needs textures) |
-| Side of the house with the door | Short or long side |
-| Paper size | A4 or US Letter |
-| Different pieces share the same pages | Saves paper (needs a number of houses) |
-| One door per house, corner letters, 5 cm ruler, top and bottom tabs | The matching `Config` options |
-| Short side, long side, wall height, roof height | Sizes in cm. Wall sizes should be multiples of 2.5 |
-| Texture seed | Another number, another variation of the textures |
-| Any other option | Any command-line option of `main.py`, for example `--no-door-and-windows --copy-gap-cm 0.3`. Run `python main.py --help` to see them all |
+The form has the number of houses, the shape and the roof, the roof windows, the materials ("every combination" makes all 64 versions), the look of the windows, which tabs to print, what to draw on the walls (door and windows, only the door, only the windows or neither), the paper size, the sizes in cm and the texture seed. Any other option can be typed in the last field, for example `--door-position left --door-style studded` (run `python main.py --help` to see them all). GitHub allows at most 25 fields in a form, and this one uses all of them.
 
-Notes:
-
-- You need a GitHub account. On the original repository only people with write access can run workflows. Everybody else can **fork** the repository (one click, no download), enable Actions in the fork and run it there.
-- The PDFs stay attached to the run for 30 days.
-- The workflow is the file `.github/workflows/generate.yml`.
+You need a GitHub account. On the original repository only people with write access can run workflows; everybody else can **fork** it (one click), enable Actions in the fork and run it there. The PDFs stay attached to the run for 30 days. The workflow is `.github/workflows/generate.yml`.
 
 ## Requirements
 
 - Python 3.10+
-- [ReportLab](https://pypi.org/project/reportlab/)
+- [ReportLab](https://pypi.org/project/reportlab/), and Pillow for the pictures of the window
 - tkinter, only for the window. It comes with Python on Windows and macOS. On Linux: `sudo apt install python3-tk`.
 
 ```bash
@@ -189,24 +122,11 @@ Started with no options, the program opens a window:
 
 ![The settings window](assets/gui_house.png)
 
-- One page for each group of settings: **House** (sizes, shape and roof), **Look** (textures, lines), **Doors & windows** (including the roof windows), **Pages & files** and **Advanced**, which holds every other setting. Move the mouse over a setting to read what it does.
-- On the page **House** you can choose the size on the grid: **left click** sets the sides of the house, **right click** sets the second wing of an L, as far down as you click. The wing is drawn on the grid in a lighter colour. A right click on the house itself takes the second wing away.
-- The language, English or Italian, is chosen at the bottom left and applies to the window and to the messages.
-- Settings that do nothing in the current situation are greyed out. For example the materials when textures are off, the second wing when the house is not an L, or the pitch of the roof when the roof is flat.
-- **Generate PDFs** runs in the background and reports in the log at the bottom. **Open folder** shows the result.
-- **Presets** keeps a set of settings in a small `.json` file, handy for the house types you print often.
-- **Copy command** puts the equivalent command-line command in the clipboard, with only the settings that differ from the defaults. It is also a quick way to fill the form of the GitHub workflow.
-- Numbers accept the decimal comma: `7,5` works.
-
-An L-shaped house with marble walls and blue tiles (the second wing was chosen with a right click on the grid), and the same page in Italian:
-
-![The window with an L house](assets/gui_house_l.png)
-![La finestra in italiano](assets/gui_house_it.png)
-
-The look of the house and the page with the door and the windows:
-
-![The Look page](assets/gui_look.png)
-![The Doors & windows page](assets/gui_doors.png)
+- One page for each group of settings: **House** (sizes, shape and roof), **Look** (materials, lines), **Doors & windows**, **Pages & files** and **Advanced**, which holds every other setting. Move the mouse over a setting to read what it does.
+- On the page **House** you pick the size on the grid: **left click** sets the sides of the house, **right click** sets the second wing of an L, as far down as you click; it is drawn in a lighter colour. A right click on the house itself takes the second wing away.
+- Settings that do nothing in the current situation are greyed out: the second wing when the house is not an L, the pitch of the roof when the roof is flat, the window settings when the windows are off.
+- **Presets** keeps a set of settings in a small `.json` file. **Copy command** puts the equivalent command-line command in the clipboard, which is also a quick way to fill the form of the GitHub workflow.
+- The language, English or Italian, is chosen at the bottom left.
 
 The window needs a screen. On a server, or if tkinter is missing, the program says so and suggests the command line.
 
@@ -215,36 +135,30 @@ The window needs a screen. On a server, or if tkinter is missing, the program sa
 Every setting can also be given as an option, and then no window opens:
 
 ```bash
-# Two textured brick houses with tiled roofs, pieces mixed on US Letter pages
-python main.py --textures-enabled --wall-material brick --roof-material tiles \
-               --houses 2 --mix-pieces --paper Letter
+# Two textured houses with a flat roof of green tiles, pieces mixed on US Letter pages
+python main.py --textures-enabled --wall-material stucco --roof-material green_tiles \
+               --roof-type flat --houses 2 --mix-pieces --paper Letter
 
-# A house 5 squares long with roof windows (the roof 2 cm high)
-python main.py --textures-enabled --wall-material stone --roof-material tiles \
-               --houses 1 --mix-pieces --roof-windows --length-cm 12.5 \
-               --height-cm 5 --roof-height-cm 2
+# A house with roof windows, stained glass windows and a studded gate on the left
+python main.py --textures-enabled --houses 1 --mix-pieces --roof-windows \
+               --length-cm 12.5 --roof-height-cm 2 --window-style stained \
+               --door-style studded --door-position left
 
-# An L-shaped house with a flat roof, in marble and blue tiles
-python main.py --textures-enabled --wall-material marble --roof-material blue_tiles \
-               --houses 1 --mix-pieces --house-shape L --roof-type flat
+# An L-shaped house in marble, without the tabs at the bottom
+python main.py --textures-enabled --wall-material marble --houses 1 --mix-pieces \
+               --house-shape L --no-bottom-tabs
 
-# Walls without the top and bottom tabs
-python main.py --no-top-bottom-tabs
-
-# Door on the long side, no calibration ruler
-python main.py --door-on long --no-calibration-ruler
+# Only windows, no door
+python main.py --no-door
 
 # Generate with the defaults of the file, without opening the window
 python main.py --no-gui
-
-# Open the window with some settings already filled in
-python main.py --gui --houses 3 --wall-material ice
 
 # All the options
 python main.py --help
 ```
 
-The defaults live in the `Config` class at the top of `main.py`. Options and window both start from them.
+The defaults live in the `Config` class at the top of `main.py`; the options and the window start from them.
 
 ### What you get
 
@@ -253,70 +167,70 @@ By default only the combined PDF is written, in an `output/` folder next to the 
 | File | Content |
 | --- | --- |
 | `house_DnD_complete.pdf` | The pieces on A4 or Letter pages |
-| `house_DnD_short_wall.pdf`, `..._long_wall.pdf`, `..._roof.pdf` | With `--no-complete-only`: one PDF for each piece, sized to the piece |
-| `house_DnD_roof_strip_N.pdf` | With roof windows and `--no-complete-only`: the strip of the windows N squares wide |
-| `house_DnD_wall_N.pdf`, `..._roof_wing_A.pdf` | With an L and `--no-complete-only`: the six walls and the roofs |
+| `house_DnD_short_wall.pdf`, `..._long_wall.pdf`, `..._roof.pdf` | With `--no-complete-only`: one PDF for each piece |
+| `house_DnD_roof_strip_N.pdf` | The strip of the roof windows N squares wide |
+| `house_DnD_wall_N.pdf`, `..._roof_wing_A.pdf` | With an L: the six walls and the roofs |
 
-A rectangular house needs **2 short walls, 2 long walls and 1 roof** (plus a strip for every roof window). An L needs **its 6 walls and 1 or 2 roofs**. Without `--houses` the combined PDF fills each page with copies of one piece, so you may print more than you need. With `--houses N` it prints exactly what N houses require. The console output lists what is on each page and how many walls have the door.
-
-If a PDF cannot be written (`PermissionError` on Windows), the file is almost always still open in a PDF viewer. The script tells you to close it and run again.
+A rectangular house needs **2 short walls, 2 long walls and 1 roof** (plus a strip for every roof window), an L its **6 walls and 1 or 2 roofs**. Without `--houses` each page is filled with copies of one piece; with `--houses N` you get exactly what N houses require. If a PDF cannot be written (`PermissionError` on Windows), it is almost always still open in a PDF viewer: close it and run again.
 
 ## Configuration
 
-The table lists the defaults currently set in `Config`. In the window they are grouped in pages, and every setting is also in the *Advanced* page. Each setting has a matching command-line option: the name with dashes, for example `wall_material` becomes `--wall-material`, and on/off settings accept `--name` and `--no-name`.
+Each setting has an option with the same name and dashes (`wall_material` is `--wall-material`); on/off settings accept `--name` and `--no-name`. Defaults are in `Config`; in the window every setting is also in the *Advanced* page.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `generate_full_house` | `True` | Whole house or a single wall PDF |
-| `width_cm` | `7.5` | Short wall inner width (3 squares) |
-| `length_cm` | `12.5` | Long wall inner width (5 squares); the first wing of an L |
-| `height_cm` | `7.5` | Wall inner height (3 squares) |
+| `width_cm`, `length_cm`, `height_cm` | `7.5`, `12.5`, `7.5` | Inner sizes of the walls (the first wing of an L) |
 | `house_shape` | `"rectangle"` | `"rectangle"` or `"L"` |
-| `wing_length_cm` | `10.0` | L shape only: length of the second wing, at least one square more than the width |
-| `roof_type` | `"gabled"` | `"gabled"` (two slopes) or `"flat"` |
-| `top_bottom_tabs` | `True` | Print the tabs at the top and at the bottom of the walls |
-| `tab_corners` | `"cut"` | Corners of the top and bottom tabs and of the gable flaps: `"cut"` cuts the whole corner at 45 degrees (trapezoids), or `"square"` (cut only where they would overlap) |
-| `tab_width_cm` | `1.0` | Tab width around the inner rectangle |
-| `roof_height_cm` | `5.0` | Height of the roof gable |
-| `roof_flap_cm` | `1.0` | Width of the roof flaps on the gable |
-| `roof_overhang_cm` | `0.5` | How far each roof slope overhangs the gable side |
-| `roof_margin_cm` | `1.0` | Extra margin added on every side of the roof sheet |
+| `wing_length_cm` | `10.0` | L only: length of the second wing, at least one square more than the width |
+| `roof_type` | `"gabled"` | `"gabled"` or `"flat"` |
+| `roof_height_cm`, `roof_flap_cm`, `roof_overhang_cm`, `roof_margin_cm` | `5.0`, `1.0`, `0.5`, `1.0` | Gable height, flaps, overhang, margin (the depth of the tabs of a flat roof) |
+| `top_tabs`, `bottom_tabs` | `True` | Print the tabs at the top / at the bottom of the walls |
+| `tab_corners` | `"cut"` | `"cut"`: trapezoid tabs; `"square"`: cut only where they would overlap |
+| `tab_width_cm` | `1.0` | Tab width |
 | `textures_enabled` | `False` | Textures on or off |
-| `wall_material` | `"wood"` | `"brick"`, `"stone"`, `"wood"`, `"marble"` or `"ice"` |
-| `roof_material` | `"thatch"` | `"tiles"`, `"blue_tiles"`, `"wood"`, `"thatch"` or `"stone"` |
-| `generate_all_variants` | `False` | Generate all 25 material combinations |
-| `seed` | `7` | Different seed, different variation of the same textures |
-| `reuse_textures` | `True` | Draw each texture once per PDF and reuse it |
-| `door_and_windows` | `True` | Draw door and windows |
+| `wall_material` | `"wood"` | `brick`, `stone`, `wood`, `marble`, `ice`, `earth`, `fieldstone`, `stucco` |
+| `roof_material` | `"thatch"` | `tiles`, `blue_tiles`, `green_tiles`, `yellow_tiles`, `wood`, `thatch`, `stone`, `grass` |
+| `generate_all_variants` | `False` | Generate all 64 material combinations |
+| `seed` | `7` | Another seed, another variation of the textures |
+| `door`, `windows` | `True` | Draw the door / the windows |
 | `door_on` | `"short"` | Door on the `"short"` or the `"long"` side |
-| `floor_height_cm` | `5.0` | One floor of windows for every this many cm of wall height |
-| `window_spacing_cells` | `2.0` | Target distance between windows, in game squares (lower: more windows) |
-| `roof_windows` | `False` | Flat windows on the roof, with a strip of paper under each |
-| `roof_window_position` | `0.5` | Where a roof window sits on the slope: `0` at the ridge, `1` at the eaves |
-| `roof_window_clearance_cm` | `0.1` | Extra room around a roof window, so that the strip fits easily |
+| `door_position` | `"center"` | `"center"`, `"left"` or `"right"` of its wall, seen from outside |
+| `door_style` | `"wood"` | `"wood"`, `"iron"` (iron bands) or `"studded"` |
+| `window_style` | `"classic"` | `"classic"`, `"stone"`, `"castle"` (slits, no glass) or `"stained"` |
+| `floor_height_cm`, `window_spacing_cells` | `5.0`, `2.0` | One floor of windows every so many cm; distance between windows in squares |
+| `roof_windows` | `False` | Flat windows on the roof |
+| `roof_window_position`, `roof_window_clearance_cm` | `0.5`, `0.1` | Where the windows sit on the slope; room around them |
 | `one_door_per_house` | `True` | Only one wall per house gets the door |
 | `paper` | `"A4"` | `"A4"` or `"Letter"` |
-| `houses` | none | Print exactly the pieces for this many houses |
-| `mix_pieces` | `False` | With `houses`: different pieces share the same pages |
-| `allow_rotation` | `True` | Allow rotating pieces by 90 degrees |
-| `joint_labels` | `True` | Corner letters on the side tabs |
-| `calibration_ruler` | `True` | 5 cm ruler on every page of the combined PDF |
+| `houses`, `mix_pieces` | none, `False` | Exactly the pieces for N houses; pieces of different kinds share the pages |
+| `joint_labels`, `calibration_ruler`, `allow_rotation` | `True` | Corner letters, 5 cm ruler, rotate pieces by 90 degrees |
 | `complete_only` | `True` | Write only the combined PDF |
-| `page_margin_cm`, `copy_gap_cm` | `0.5` | Page margin and gap between pieces |
-| `output_dir` | `"output"` | Output folder, relative to the script |
-| `base_name` | `"house_DnD"` | Base name of the PDFs |
+| `output_dir`, `base_name` | `"output"`, `"house_DnD"` | Where and how the PDFs are named |
 | `language` | `"en"` | `"en"` or `"it"`: language of the messages |
 
-Colours and dash pattern (`marker_color`, `line_color`, `dash`) can only be changed in the file. Door and window sizes are set in metres of the fiction (`door_width_min_m`, `door_width_max_m`, `door_height_m`, `window_width_m`, `window_height_m`, `window_sill_m`, `round_window_radius_m`) and converted with `cell_cm` and `meters_per_cell`.
+Colours and dash pattern can only be changed in the file. Door and window sizes are set in metres of the fiction (`door_width_min_m`, `door_width_max_m`, `door_height_m`, `window_width_m`, `window_height_m`, `window_sill_m`, `round_window_radius_m`) and converted with `cell_cm` and `meters_per_cell`.
 
-To add a material, write a texture function and register it with the `@wall_texture("name", base=(r, g, b))` or `@roof_texture(...)` decorator. It then shows up in the options and in the window automatically; add its name to `material.<name>` in `i18n.py` and a picture to `draw_swatch` in `gui.py`.
+**Adding a material.** Write a texture function in `textures.py` and register it with `@wall_texture("name", base=(r, g, b))` or `@roof_texture(...)`. It shows up in the options and in the window by itself; add its name as `material.<name>` in `i18n.py` and a picture in `draw_swatch` in `gui_images.py`. Do not use transparency in a texture: a texture that is drawn once and used again would lose it.
+
+## Files
+
+| File | Content |
+| --- | --- |
+| `main.py` | The settings (`Config`), the pieces, the page packing, the command line |
+| `textures.py` | The wall and roof textures |
+| `openings.py` | Where doors and windows go on a wall |
+| `fittings.py` | Doors and windows as drawings, and their styles |
+| `drawing.py` | Small helpers: colours, paths |
+| `gui.py`, `gui_images.py` | The window, and its icons and pictures |
+| `i18n.py` | The texts, in English and Italian |
+| `test_*.py` | The tests |
 
 ## Printing and assembly
 
-- Print at **100% / "actual size"**, never "fit to page". Otherwise the pieces will not match the 2.5 cm grid. The ruler at the bottom of every page of the combined PDF should measure exactly 5 cm.
-- Cut along the dashed lines and fold along the solid ones.
-- Thick paper or light card works best.
-- For roof windows, build the strips and fit them under the roof before putting the roof on the walls (see above).
+- Print at **100% / "actual size"**, never "fit to page". The ruler at the bottom of every page should measure exactly 5 cm.
+- Cut along the dashed lines and fold along the solid ones. Thick paper or light card works best.
+- For roof windows, build the strips and fit them under the roof before putting the roof on the walls.
 
 ## Tests
 
@@ -324,21 +238,19 @@ To add a material, write a texture function and register it with the `@wall_text
 python -m unittest -v
 ```
 
-The tests cover geometry, packing, doors and windows, roof windows (where they go, the right triangle, the strip), L-shaped houses (walls, corner letters, roofs), flat roofs, the tabs option, every texture, corner letters, colour contrast, validation, the command line, the generated PDFs, the texts in both languages, and the window (settings form, greying out, generation in the background, presets, copied command). The tests that open the window are skipped when there is no screen or no tkinter. On Linux you can give them a virtual screen with `xvfb-run python -m unittest`.
+The tests cover geometry, packing, doors and windows, roof windows, L-shaped houses, flat roofs, tabs, textures, validation, the command line, the generated PDFs, the texts in both languages and the window. The tests that open the window are skipped when there is no screen; on Linux you can give them a virtual one with `xvfb-run python -m unittest`.
 
 ## Known limitations
 
-- The corner letters tell you which tabs go together. They do not say which tab is slit from the top and which from the bottom for the interlocking joint.
-- The packer is a fast heuristic: it is not guaranteed to find the layout with the fewest pages.
-- Textures are drawn procedurally and are not meant to look photographic.
-- Roof windows work only on a rectangular house with a gabled roof. An L or a flat roof has none, and the program says so.
-- The two wings of an L have the same width. In an L the first roof is a plain long roof, so the roofs of the two wings do not make the hip you would see on a real house at the outside corner.
-- A flat roof is a plain sheet: no parapet or edge.
+- The corner letters tell you which tabs go together, not which one is slit from the top and which from the bottom for the interlocking joint.
+- The packer is a fast heuristic: it does not always find the layout with the fewest pages.
+- Textures are procedural and not meant to look photographic.
+- Roof windows work only on a rectangular house with a gabled roof.
+- The two wings of an L have the same width, and its two roofs do not make the hip you would see on a real house at the outside corner.
+- A flat roof is a plain sheet: no parapet.
 
 ## Roadmap
 
-- More materials and window styles
-- Optional second storey for larger walls
 - Wings of different widths for L-shaped houses, and other shapes (T, U)
-- Split `main.py` into modules (geometry, textures, openings, layout, command line)
+- Optional second storey for larger walls
 - Preview of the pages inside the window

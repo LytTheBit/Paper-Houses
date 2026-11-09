@@ -30,6 +30,11 @@ on:
         type: choice
         options: [both, top, bottom, none]
         default: both
+      window_style:
+        description: "Look of the windows"
+        type: choice
+        options: [classic, stone, castle, stained]
+        default: classic
       openings:
         description: "What to draw on the walls"
         type: choice
@@ -42,12 +47,12 @@ on:
       wall_material:
         description: "Wall material"
         type: choice
-        options: [brick, stone, wood, marble, ice]
+        options: [brick, stone, wood, marble, ice, earth, fieldstone, stucco]
         default: brick
       roof_material:
         description: "Roof material"
         type: choice
-        options: [tiles, blue_tiles, wood, thatch, stone]
+        options: [tiles, blue_tiles, green_tiles, yellow_tiles, wood, thatch, stone, grass]
         default: tiles
       all_variants:
         description: "Every wall/roof combination (9 houses, needs textures)"
@@ -108,7 +113,7 @@ on:
         type: string
         default: "7"
       extra_options:
-        description: "Any other option, e.g. --door-position left --copy-gap-cm 0.3 (see README)"
+        description: "Any other option, e.g. --door-position left --door-style studded (see README)"
         type: string
         default: ""
 
@@ -138,6 +143,7 @@ jobs:
           IN_ROOF_WINDOWS: ${{ inputs.roof_windows }}
           IN_TABS: ${{ inputs.tabs }}
           IN_OPENINGS: ${{ inputs.openings }}
+          IN_WINDOW_STYLE: ${{ inputs.window_style }}
           IN_WING: ${{ inputs.wing_length_cm }}
           IN_TEXTURES: ${{ inputs.textures }}
           IN_WALL: ${{ inputs.wall_material }}
@@ -199,6 +205,7 @@ jobs:
             "$(flag roof-windows "$IN_ROOF_WINDOWS")"
             "${tabs_args[@]}"
             "${openings_args[@]}"
+            --window-style "$IN_WINDOW_STYLE"
             --height-cm "$IN_HEIGHT"
             --roof-height-cm "$IN_ROOF_HEIGHT"
             --seed "$IN_SEED"

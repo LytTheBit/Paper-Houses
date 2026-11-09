@@ -118,6 +118,10 @@ STRINGS["en"] = {
     "err.house_shape": "house_shape must be 'rectangle' or 'L' "
                        "(got {value!r})",
     "err.roof_type": "roof_type must be 'gabled' or 'flat' (got {value!r})",
+    "err.window_style": "window_style must be 'classic', 'stone', 'castle' "
+                        "or 'stained' (got {value!r})",
+    "err.door_style": "door_style must be 'wood', 'iron' or 'studded' "
+                      "(got {value!r})",
     "err.tab_corners": "tab_corners must be 'cut' or 'square' "
                        "(got {value!r})",
     "err.door_position": "door_position must be 'center', 'left' or 'right' "
@@ -185,6 +189,15 @@ STRINGS["en"] = {
     "card.picker": "Pick it on the grid",
     "card.amount": "How many houses",
     "card.shape": "Shape and roof",
+    "ui.window_style": "Window style",
+    "ui.wstyle_classic": "Classic",
+    "ui.wstyle_stone": "Stone",
+    "ui.wstyle_castle": "Castle slits",
+    "ui.wstyle_stained": "Stained glass",
+    "ui.door_style": "Door style",
+    "ui.dstyle_wood": "Wood",
+    "ui.dstyle_iron": "Iron bands",
+    "ui.dstyle_studded": "Studded gate",
     "ui.door_position": "Door position",
     "ui.pos_center": "Centre",
     "ui.pos_left": "Left",
@@ -233,6 +246,12 @@ STRINGS["en"] = {
     "material.marble": "Marble",
     "material.ice": "Ice",
     "material.blue_tiles": "Blue tiles",
+    "material.green_tiles": "Green tiles",
+    "material.yellow_tiles": "Yellow tiles",
+    "material.grass": "Grass",
+    "material.earth": "Earth",
+    "material.fieldstone": "Fieldstone",
+    "material.stucco": "Stucco",
 
     # ---- Window: doors page ----
     "card.door": "Door",
@@ -388,6 +407,14 @@ STRINGS["en"] = {
     "help.door": "draw the door",
     "label.windows": "Windows",
     "help.windows": "draw the windows (and the small round one in the gable)",
+    "label.window_style": "Window style",
+    "help.window_style": "look of the windows: 'classic' (wood frame), "
+                         "'stone' (stone frame), 'castle' (a narrow slit "
+                         "with no glass), 'stained' (stained glass)",
+    "label.door_style": "Door style",
+    "help.door_style": "look of the door: 'wood' (planks), 'iron' (planks "
+                       "with iron bands), 'studded' (a heavy gate with iron "
+                       "studs)",
     "label.door_position": "Door position",
     "help.door_position": "where the door is on its wall, seen from outside: "
                           "in the centre, or towards the left or the right",
@@ -480,6 +507,10 @@ STRINGS["it"] = {
                        "(ricevuto {value!r})",
     "err.roof_type": "roof_type deve essere 'gabled' o 'flat' "
                      "(ricevuto {value!r})",
+    "err.window_style": "window_style deve essere 'classic', 'stone', "
+                        "'castle' o 'stained' (ricevuto {value!r})",
+    "err.door_style": "door_style deve essere 'wood', 'iron' o 'studded' "
+                      "(ricevuto {value!r})",
     "err.tab_corners": "tab_corners deve essere 'cut' o 'square' "
                        "(ricevuto {value!r})",
     "err.door_position": "door_position deve essere 'center', 'left' o "
@@ -547,6 +578,15 @@ STRINGS["it"] = {
     "card.picker": "Sceglila sulla griglia",
     "card.amount": "Quante case",
     "card.shape": "Forma e tetto",
+    "ui.window_style": "Stile delle finestre",
+    "ui.wstyle_classic": "Classiche",
+    "ui.wstyle_stone": "Di pietra",
+    "ui.wstyle_castle": "Da castello",
+    "ui.wstyle_stained": "Vetrate",
+    "ui.door_style": "Stile della porta",
+    "ui.dstyle_wood": "Legno",
+    "ui.dstyle_iron": "Con fasce di ferro",
+    "ui.dstyle_studded": "Portone borchiato",
     "ui.door_position": "Posizione della porta",
     "ui.pos_center": "Al centro",
     "ui.pos_left": "A sinistra",
@@ -595,6 +635,12 @@ STRINGS["it"] = {
     "material.marble": "Marmo",
     "material.ice": "Ghiaccio",
     "material.blue_tiles": "Tegole blu",
+    "material.green_tiles": "Tegole verdi",
+    "material.yellow_tiles": "Tegole gialle",
+    "material.grass": "Erba",
+    "material.earth": "Terra",
+    "material.fieldstone": "Pietra grezza",
+    "material.stucco": "Stucco",
 
     # ---- Window: doors page ----
     "card.door": "Porta",
@@ -757,6 +803,15 @@ STRINGS["it"] = {
     "help.door": "disegna la porta",
     "label.windows": "Finestre",
     "help.windows": "disegna le finestre (e quella tonda del timpano)",
+    "label.window_style": "Stile delle finestre",
+    "help.window_style": "aspetto delle finestre: 'classic' (telaio di "
+                         "legno), 'stone' (cornice di pietra), 'castle' "
+                         "(una feritoia stretta e senza vetro), 'stained' "
+                         "(vetrata colorata)",
+    "label.door_style": "Stile della porta",
+    "help.door_style": "aspetto della porta: 'wood' (assi di legno), 'iron' "
+                       "(assi con fasce di ferro), 'studded' (un portone "
+                       "pesante con borchie di ferro)",
     "label.door_position": "Posizione della porta",
     "help.door_position": "dove sta la porta sulla sua parete, vista da "
                           "fuori: al centro, oppure verso sinistra o verso "
