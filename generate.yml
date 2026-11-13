@@ -47,12 +47,12 @@ on:
       wall_material:
         description: "Wall material"
         type: choice
-        options: [brick, stone, wood, marble, ice, earth, fieldstone, stucco]
+        options: [brick, stone, wood, marble, ice, earth, rubble, fieldstone, old_stucco, new_stucco]
         default: brick
       roof_material:
         description: "Roof material"
         type: choice
-        options: [tiles, blue_tiles, green_tiles, yellow_tiles, wood, thatch, stone, grass]
+        options: [tiles, blue_tiles, green_tiles, yellow_tiles, wood, thatch, stone, grass, earth]
         default: tiles
       all_variants:
         description: "Every wall/roof combination (9 houses, needs textures)"

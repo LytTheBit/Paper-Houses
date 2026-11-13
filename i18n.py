@@ -189,6 +189,7 @@ STRINGS["en"] = {
     "card.picker": "Pick it on the grid",
     "card.amount": "How many houses",
     "card.shape": "Shape and roof",
+    "card.fittings": "Door and windows",
     "ui.window_style": "Window style",
     "ui.wstyle_classic": "Classic",
     "ui.wstyle_stone": "Stone",
@@ -250,8 +251,10 @@ STRINGS["en"] = {
     "material.yellow_tiles": "Yellow tiles",
     "material.grass": "Grass",
     "material.earth": "Earth",
-    "material.fieldstone": "Fieldstone",
-    "material.stucco": "Stucco",
+    "material.fieldstone": "Rough stone",
+    "material.rubble": "Rubble",
+    "material.old_stucco": "Old stucco",
+    "material.new_stucco": "New stucco",
 
     # ---- Window: doors page ----
     "card.door": "Door",
@@ -578,6 +581,7 @@ STRINGS["it"] = {
     "card.picker": "Sceglila sulla griglia",
     "card.amount": "Quante case",
     "card.shape": "Forma e tetto",
+    "card.fittings": "Porta e finestre",
     "ui.window_style": "Stile delle finestre",
     "ui.wstyle_classic": "Classiche",
     "ui.wstyle_stone": "Di pietra",
@@ -640,7 +644,9 @@ STRINGS["it"] = {
     "material.grass": "Erba",
     "material.earth": "Terra",
     "material.fieldstone": "Pietra grezza",
-    "material.stucco": "Stucco",
+    "material.rubble": "Pietrame",
+    "material.old_stucco": "Stucco vecchio",
+    "material.new_stucco": "Stucco nuovo",
 
     # ---- Window: doors page ----
     "card.door": "Porta",

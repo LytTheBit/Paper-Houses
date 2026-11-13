@@ -42,8 +42,8 @@ class NoDisplayError(Exception):
 # LOOK
 # ============================================================
 
-from gui_images import (COLORS, SUPER, draw_icon, draw_indicator, draw_logo,
-                        draw_swatch)
+from gui_images import (COLORS, SUPER, draw_fitting_swatch, draw_icon,
+                        draw_indicator, draw_logo, draw_swatch)
 
 # Pages of the window, in order, with the icon of each
 PAGES = [("house", "house"), ("look", "palette"), ("doors", "door"),
@@ -130,6 +130,7 @@ WINDOW_ONLY = {
 }
 DOOR_SETTINGS = DOOR_ONLY | WINDOW_ONLY
 TEXTURE_SETTINGS = {
+    "window_style", "door_style",
     "wall_material", "roof_material", "generate_all_variants", "seed",
     "texture_on_roof_overhang", "reuse_textures",
 }
@@ -1071,7 +1072,18 @@ class App:
         self._materials(card, 3, "roof_material", "roof", self.t("ui.roof"))
         self._check(card, "generate_all_variants", 4, pady=(10, 2))
 
-        variation = self._card(body, self.t("card.variation"), row=1)
+        fittings = self._card(body, self.t("card.fittings"), row=1)
+        size = (self.px(64), self.px(44))
+        self._materials(
+            fittings, 1, "window_style", "window", self.t("card.windows"),
+            picture=lambda choice: draw_fitting_swatch("window", choice, size),
+            label_of=lambda choice: self.t(f"ui.wstyle_{choice}"))
+        self._materials(
+            fittings, 2, "door_style", "door", self.t("card.door"),
+            picture=lambda choice: draw_fitting_swatch("door", choice, size),
+            label_of=lambda choice: self.t(f"ui.dstyle_{choice}"))
+
+        variation = self._card(body, self.t("card.variation"), row=2)
         label = ttk.Label(variation, text=self.t("ui.variation_number"),
                           style="Card.TLabel")
         label.grid(row=1, column=0, sticky="w", padx=(0, 14))
@@ -1086,7 +1098,12 @@ class App:
         self._reg("seed", label, spin, button)
         self._help(self.describe("seed"), label, spin, button)
 
-    def _materials(self, parent, row, name, role, caption):
+    def _materials(self, parent, row, name, role, caption, picture=None,
+                   label_of=None, per_row=5):
+        """A row of pictures to choose from. `picture` draws the picture of
+        a choice (the materials have their own way to draw it) and
+        `label_of` gives the text under it."""
+        label_of = label_of or self.material_label
         label = ttk.Label(parent, text=caption, style="Card.TLabel")
         label.grid(row=row, column=0, sticky="nw", padx=(0, 16),
                    pady=(12, 0))
@@ -1099,15 +1116,20 @@ class App:
         buttons = []
         for i, choice in enumerate(choices):
             kwargs = {}
-            if Image is not None and choice in palettes:
-                image = ImageTk.PhotoImage(
-                    draw_swatch(role, choice, palettes[choice]["base"],
-                                (self.px(64), self.px(44))),
-                    master=self.root)
+            picture_of_choice = None
+            if Image is not None and picture is not None:
+                picture_of_choice = picture(choice)
+            elif Image is not None and choice in palettes:
+                picture_of_choice = draw_swatch(
+                    role, choice, palettes[choice]["base"],
+                    (self.px(64), self.px(44)))
+            if picture_of_choice is not None:
+                image = ImageTk.PhotoImage(picture_of_choice,
+                                           master=self.root)
                 self._images.append(image)
                 kwargs = {"image": image, "compound": "top"}
             button = tk.Radiobutton(
-                box, text=self.material_label(choice),
+                box, text=label_of(choice),
                 variable=self.vars[name], value=choice, indicatoron=False,
                 bg=COLORS["card"], fg=COLORS["text"],
                 activebackground=COLORS["accent_light"],
@@ -1118,7 +1140,8 @@ class App:
                 highlightcolor=COLORS["accent"], padx=self.px(5),
                 pady=self.px(6), font=self.fonts["small"], cursor="hand2",
                 **kwargs)
-            button.grid(row=0, column=i, padx=(0, self.px(5)))
+            button.grid(row=i // per_row, column=i % per_row,
+                        padx=(0, self.px(5)), pady=(0, self.px(4)))
             buttons.append(button)
 
         self.swatch_buttons[name] = buttons
@@ -1170,48 +1193,28 @@ class App:
                       ("right", self.t("ui.pos_right"))])
         self._reg("door_position", label)
 
-        label = ttk.Label(door, text=self.t("ui.door_style"),
-                          style="Card.TLabel")
-        label.grid(row=4, column=0, sticky="w", padx=(0, 16), pady=(2, 2))
-        self._radios(door, "door_style", 4,
-                     [("wood", self.t("ui.dstyle_wood")),
-                      ("iron", self.t("ui.dstyle_iron")),
-                      ("studded", self.t("ui.dstyle_studded"))])
-        self._reg("door_style", label)
-
-        self._check(door, "one_door_per_house", 5, pady=(8, 2))
-        self._check(door, "door_arched", 6)
+        self._check(door, "one_door_per_house", 4, pady=(8, 2))
+        self._check(door, "door_arched", 5)
 
         windows = self._card(body, self.t("card.windows"), row=1)
         self._check(windows, "windows", 1)
-
-        label = ttk.Label(windows, text=self.t("ui.window_style"),
-                          style="Card.TLabel")
-        label.grid(row=2, column=0, sticky="w", padx=(0, 16), pady=(8, 2))
-        self._radios(windows, "window_style", 2,
-                     [("classic", self.t("ui.wstyle_classic")),
-                      ("stone", self.t("ui.wstyle_stone")),
-                      ("castle", self.t("ui.wstyle_castle")),
-                      ("stained", self.t("ui.wstyle_stained"))])
-        self._reg("window_style", label)
-
-        self._square_row(windows, 3, "floor_height_cm", 0.5)
+        self._square_row(windows, 2, "floor_height_cm", 0.5)
         label = ttk.Label(windows, text=self.t("ui.window_spacing"),
                           style="Card.TLabel")
-        label.grid(row=4, column=0, sticky="w", padx=(0, 16), pady=5)
+        label.grid(row=3, column=0, sticky="w", padx=(0, 16), pady=5)
         spin = ttk.Spinbox(windows, textvariable=self.vars["window_spacing_cells"],
                            from_=0.5, to=20, increment=0.5, width=7)
-        spin.grid(row=4, column=1, sticky="w", pady=5)
+        spin.grid(row=3, column=1, sticky="w", pady=5)
         self._reg("window_spacing_cells", label, spin)
         self._help(self.describe("window_spacing_cells"), label, spin)
 
-        self._check(windows, "roof_windows", 5, pady=(12, 0))
+        self._check(windows, "roof_windows", 4, pady=(12, 0))
         ttk.Label(windows, text=self.t("ui.roof_windows_hint"),
                   style="Muted.Card.TLabel").grid(
-            row=6, column=0, columnspan=4, sticky="w", padx=(30, 0))
+            row=5, column=0, columnspan=4, sticky="w", padx=(30, 0))
         ttk.Label(windows, text=self.t("ui.more_in_advanced"),
                   style="Muted.Card.TLabel").grid(
-            row=7, column=0, columnspan=4, sticky="w", pady=(10, 0))
+            row=6, column=0, columnspan=4, sticky="w", pady=(10, 0))
 
     # ---- Pages and files page ----
 

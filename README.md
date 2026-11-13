@@ -10,9 +10,9 @@ A Python script draws the cutting and folding templates for a small house, **siz
 
 - **Grid-accurate**: wall sizes are the *inner* rectangle, measured in 2.5 cm game squares. The 1 cm tabs are added outside and never count towards the house size.
 - **Procedural textures**, the same every time for a given `seed`, only inside the solid lines (the tabs have the base colour, which makes cutting and gluing easier):
-  - 8 walls: brick, stone, wood, marble, ice, earth, fieldstone, stucco
-  - 8 roofs: tiles (red, blue, green, yellow), wood shingles, thatch, stone slabs, grass
-- **Door and windows in several styles**: windows can be classic, stone, castle slits (no glass) or stained glass; the door can be plain wood, with iron bands, or a studded gate. Door and windows can be turned off separately.
+  - 10 walls: brick, stone, wood, marble, ice, earth, rubble (rough stones in mortar), rough stone (a rock face), old stucco (with bricks showing here and there) and new stucco (white, in a wooden frame, like the houses of the Middle Ages)
+  - 9 roofs: tiles (red, blue, green, yellow), wood shingles, thatch, stone slabs, grass, earth
+- **Door and windows in several styles**, chosen on the Look page with a picture of each: windows can be classic, stone, castle slits (no glass) or stained glass; the door can be plain wood, with iron bands, or a studded gate. Door and windows can be turned off separately.
 - **The door can be in the centre, on the left or on the right** of its wall, and on the short or the long side of the house.
 - **Rectangular or L-shaped houses**, with a **gabled or a flat roof**. A flat roof is paved with tiles that mark the 2.5 cm squares, so miniatures can stand on it.
 - **Roof windows**: flat spots halfway down each slope of the roof, supported by a strip of paper, where miniatures can stand.
@@ -27,7 +27,7 @@ A Python script draws the cutting and folding templates for a small house, **siz
 
 ## Gallery
 
-Top: brick, stone, wood, marble, ice, earth, fieldstone and stucco walls. Bottom: red, blue, green and yellow tiles, wood, thatch, stone and grass roofs.
+Top: brick, stone, wood, marble, ice, earth, rubble, rough stone, old stucco and new stucco walls. Bottom: red, blue, green and yellow tiles, wood, thatch, stone, grass and earth roofs.
 
 ![Wall and roof materials](assets/materials_gallery.png)
 
@@ -96,7 +96,7 @@ Doors are 1 m to 1.5 m wide depending on the wall length, windows are 0.8 x 0.9 
 3. Press **Run workflow**, fill the form and confirm.
 4. After about a minute the run turns green. Open it and download the `paper-houses-N` file at the bottom: a zip with the PDFs. The run page also lists what is on every page.
 
-The form has the number of houses, the shape and the roof, the roof windows, the materials ("every combination" makes all 64 versions), the look of the windows, which tabs to print, what to draw on the walls (door and windows, only the door, only the windows or neither), the paper size, the sizes in cm and the texture seed. Any other option can be typed in the last field, for example `--door-position left --door-style studded` (run `python main.py --help` to see them all). GitHub allows at most 25 fields in a form, and this one uses all of them.
+The form has the number of houses, the shape and the roof, the roof windows, the materials ("every combination" makes all 90 versions), the look of the windows, which tabs to print, what to draw on the walls (door and windows, only the door, only the windows or neither), the paper size, the sizes in cm and the texture seed. Any other option can be typed in the last field, for example `--door-position left --door-style studded` (run `python main.py --help` to see them all). GitHub allows at most 25 fields in a form, and this one uses all of them.
 
 You need a GitHub account. On the original repository only people with write access can run workflows; everybody else can **fork** it (one click), enable Actions in the fork and run it there. The PDFs stay attached to the run for 30 days. The workflow is `.github/workflows/generate.yml`.
 
@@ -122,7 +122,7 @@ Started with no options, the program opens a window:
 
 ![The settings window](assets/gui_house.png)
 
-- One page for each group of settings: **House** (sizes, shape and roof), **Look** (materials, lines), **Doors & windows**, **Pages & files** and **Advanced**, which holds every other setting. Move the mouse over a setting to read what it does.
+- One page for each group of settings: **House** (sizes, shape and roof), **Look** (materials, the look of windows and door, lines), **Doors & windows**, **Pages & files** and **Advanced**, which holds every other setting. Move the mouse over a setting to read what it does.
 - On the page **House** you pick the size on the grid: **left click** sets the sides of the house, **right click** sets the second wing of an L, as far down as you click; it is drawn in a lighter colour. A right click on the house itself takes the second wing away.
 - Settings that do nothing in the current situation are greyed out: the second wing when the house is not an L, the pitch of the roof when the roof is flat, the window settings when the windows are off.
 - **Presets** keeps a set of settings in a small `.json` file. **Copy command** puts the equivalent command-line command in the clipboard, which is also a quick way to fill the form of the GitHub workflow.
@@ -189,9 +189,9 @@ Each setting has an option with the same name and dashes (`wall_material` is `--
 | `tab_corners` | `"cut"` | `"cut"`: trapezoid tabs; `"square"`: cut only where they would overlap |
 | `tab_width_cm` | `1.0` | Tab width |
 | `textures_enabled` | `False` | Textures on or off |
-| `wall_material` | `"wood"` | `brick`, `stone`, `wood`, `marble`, `ice`, `earth`, `fieldstone`, `stucco` |
-| `roof_material` | `"thatch"` | `tiles`, `blue_tiles`, `green_tiles`, `yellow_tiles`, `wood`, `thatch`, `stone`, `grass` |
-| `generate_all_variants` | `False` | Generate all 64 material combinations |
+| `wall_material` | `"wood"` | `brick`, `stone`, `wood`, `marble`, `ice`, `earth`, `rubble`, `fieldstone`, `old_stucco`, `new_stucco` |
+| `roof_material` | `"thatch"` | `tiles`, `blue_tiles`, `green_tiles`, `yellow_tiles`, `wood`, `thatch`, `stone`, `grass`, `earth` |
+| `generate_all_variants` | `False` | Generate all 90 material combinations |
 | `seed` | `7` | Another seed, another variation of the textures |
 | `door`, `windows` | `True` | Draw the door / the windows |
 | `door_on` | `"short"` | Door on the `"short"` or the `"long"` side |
@@ -211,7 +211,7 @@ Each setting has an option with the same name and dashes (`wall_material` is `--
 
 Colours and dash pattern can only be changed in the file. Door and window sizes are set in metres of the fiction (`door_width_min_m`, `door_width_max_m`, `door_height_m`, `window_width_m`, `window_height_m`, `window_sill_m`, `round_window_radius_m`) and converted with `cell_cm` and `meters_per_cell`.
 
-**Adding a material.** Write a texture function in `textures.py` and register it with `@wall_texture("name", base=(r, g, b))` or `@roof_texture(...)`. It shows up in the options and in the window by itself; add its name as `material.<name>` in `i18n.py` and a picture in `draw_swatch` in `gui_images.py`. Do not use transparency in a texture: a texture that is drawn once and used again would lose it.
+**Adding a material.** Write a texture function in `textures.py` and register it with `@wall_texture("name", base=(r, g, b))` or `@roof_texture(...)`. It shows up in the options and in the window by itself; add its name as `material.<name>` in `i18n.py` and a picture in `draw_swatch` in `gui_images.py`. A wall can also draw its own details over the texture, like the wooden frame of the new stucco. Do not use transparency in a texture: a texture that is drawn once and used again would lose it.
 
 ## Files
 

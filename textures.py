@@ -335,8 +335,8 @@ def texture_earth(c, x0, y0, x1, y1, pal, rnd):
         c.drawPath(p, stroke=1, fill=0)
 
 
-@wall_texture("fieldstone", base=(0.60, 0.58, 0.54), mortar=(0.30, 0.28, 0.26))
-def texture_fieldstone(c, x0, y0, x1, y1, pal, rnd):
+@wall_texture("rubble", base=(0.60, 0.58, 0.54), mortar=(0.30, 0.28, 0.26))
+def texture_rubble(c, x0, y0, x1, y1, pal, rnd):
     """Rough stones of every size, not in neat courses, with dark joints."""
     c.setFillColorRGB(*pal["mortar"])
     c.rect(x0, y0, x1 - x0, y1 - y0, stroke=0, fill=1)
@@ -401,14 +401,116 @@ def texture_fieldstone(c, x0, y0, x1, y1, pal, rnd):
         y += rh
 
 
-@wall_texture("stucco", base=(0.91, 0.85, 0.72))
-def texture_stucco(c, x0, y0, x1, y1, pal, rnd):
+@wall_texture("fieldstone", base=(0.52, 0.49, 0.45))
+def texture_fieldstone(c, x0, y0, x1, y1, pal, rnd):
+    """A rock face: big angular facets lit from the upper left, in layers,
+    with cracks along the layers and some moss."""
+    cell_w, cell_h = 1.5 * cm, 1.1 * cm
+    cols = int((x1 - x0) / cell_w) + 3
+    rows = int((y1 - y0) / cell_h) + 3
+
+    # The corners are shared by the facets, so there are no gaps
+    corners = {}
+    for i in range(cols + 1):
+        for j in range(rows + 1):
+            corners[i, j] = (
+                x0 + (i - 1) * cell_w + rnd.uniform(-0.32, 0.32) * cell_w,
+                y0 + (j - 1) * cell_h + rnd.uniform(-0.32, 0.32) * cell_h)
+
+    # Every layer of rock has its own tone, from grey to brown
+    layer = [(rnd.uniform(-0.12, 0.12), rnd.uniform(-0.08, 0.08))
+             for _ in range(rows + 1)]
+
+    c.setLineJoin(1)
+    for j in range(rows):
+        tone, warm = layer[j]
+        for i in range(cols):
+            a, b = corners[i, j], corners[i + 1, j]
+            d, e = corners[i, j + 1], corners[i + 1, j + 1]
+            if rnd.random() < 0.5:
+                triangles = ((a, b, e), (a, e, d))
+            else:
+                triangles = ((a, b, d), (b, e, d))
+            for k, triangle in enumerate(triangles):
+                # The facets that look up and to the left are lighter
+                lit = rnd.uniform(-1.0, 1.0)
+                colour = vary((pal["base"][0] + warm, pal["base"][1],
+                               pal["base"][2] - warm), rnd, 0.04)
+                colour = darken(colour, 1.0 + tone + 0.26 * lit)
+                path = c.beginPath()
+                path.moveTo(*triangle[0])
+                path.lineTo(*triangle[1])
+                path.lineTo(*triangle[2])
+                path.close()
+                c.setFillColorRGB(*colour)
+                c.setStrokeColorRGB(*darken(colour, 0.7))
+                c.setLineWidth(0.4)
+                c.drawPath(path, stroke=1, fill=1)
+                # Rough grain on the facet
+                cx = sum(point[0] for point in triangle) / 3
+                cy = sum(point[1] for point in triangle) / 3
+                c.setFillColorRGB(*darken(colour, rnd.choice((0.8, 1.2))))
+                for _ in range(3):
+                    c.circle(cx + rnd.uniform(-0.3, 0.3) * cell_w,
+                             cy + rnd.uniform(-0.3, 0.3) * cell_h,
+                             rnd.uniform(0.01, 0.03) * cm, stroke=0, fill=1)
+
+    # Cracks along the layers, with a light edge under them
+    for j in range(1, rows, 2):
+        yy = y0 + (j - 1) * cell_h + rnd.uniform(-0.2, 0.2) * cm
+        points = []
+        x = x0 - 0.3 * cm
+        while x < x1 + 0.3 * cm:
+            points.append((x, yy + rnd.uniform(-0.14, 0.14) * cm))
+            x += rnd.uniform(0.4, 0.9) * cm
+        for dy, colour, width in ((0.0, darken(pal["base"], 0.35), 0.9),
+                                  (-0.07 * cm, darken(pal["base"], 1.3), 0.6)):
+            c.setStrokeColorRGB(*colour)
+            c.setLineWidth(width)
+            line = c.beginPath()
+            line.moveTo(points[0][0], points[0][1] + dy)
+            for px, py in points[1:]:
+                line.lineTo(px, py + dy)
+            c.drawPath(line, stroke=1, fill=0)
+
+    # A few cracks across
+    c.setStrokeColorRGB(*darken(pal["base"], 0.35))
+    c.setLineWidth(0.7)
+    area = ((x1 - x0) * (y1 - y0)) / cm ** 2
+    for _ in range(int(area / 12) + 1):
+        px = rnd.uniform(x0, x1)
+        py = rnd.uniform(y0, y1)
+        line = c.beginPath()
+        line.moveTo(px, py)
+        for _ in range(rnd.randint(3, 5)):
+            px += rnd.uniform(-0.18, 0.18) * cm
+            py -= rnd.uniform(0.15, 0.35) * cm
+            line.lineTo(px, py)
+        c.drawPath(line, stroke=1, fill=0)
+
+    # Moss and grains
+    for _ in range(int(area * 0.8)):
+        r = rnd.uniform(0.04, 0.12) * cm
+        px = rnd.uniform(x0, x1)
+        py = rnd.uniform(y0, y1)
+        c.setFillColorRGB(*vary((0.36, 0.44, 0.27), rnd, 0.18))
+        c.ellipse(px - r, py - r * 0.6, px + r, py + r * 0.6,
+                  stroke=0, fill=1)
+    for _ in range(int(area * 6)):
+        c.setFillColorRGB(*darken(pal["base"], rnd.choice((0.65, 1.25))))
+        c.circle(rnd.uniform(x0, x1), rnd.uniform(y0, y1),
+                 rnd.uniform(0.008, 0.02) * cm, stroke=0, fill=1)
+
+
+def _plaster(c, x0, y0, x1, y1, base, rnd, chips):
     """Plaster: smooth, with soft patches, trowel marks, a few cracks and
-    some spots where it has come off and the bricks show."""
+    some spots where it has come off and the bricks show. `chips` is the
+    area, in square centimetres, that has one such spot: the smaller it is,
+    the more bricks show."""
     width, height = x1 - x0, y1 - y0
     area = (width * height) / cm ** 2
 
-    c.setFillColorRGB(*pal["base"])
+    c.setFillColorRGB(*base)
     c.rect(x0, y0, width, height, stroke=0, fill=1)
 
     c.saveState()
@@ -421,8 +523,8 @@ def texture_stucco(c, x0, y0, x1, y1, pal, rnd):
         r = rnd.uniform(0.35, 1.1) * cm
         px = rnd.uniform(x0, x1)
         py = rnd.uniform(y0, y1)
-        shade = darken(pal["base"], rnd.choice((0.84, 0.90, 1.05, 1.09)))
-        c.setFillColorRGB(*blend(pal["base"], shade, 0.6))
+        shade = darken(base, rnd.choice((0.84, 0.90, 1.05, 1.09)))
+        c.setFillColorRGB(*blend(base, shade, 0.6))
         c.ellipse(px - r, py - r * 0.7, px + r, py + r * 0.7, stroke=0, fill=1)
 
     # Trowel marks: short curved strokes
@@ -432,19 +534,19 @@ def texture_stucco(c, x0, y0, x1, y1, pal, rnd):
         py = rnd.uniform(y0, y1)
         length = rnd.uniform(0.3, 0.7) * cm
         light = rnd.random() < 0.5
-        c.setStrokeColorRGB(*(darken(pal["base"], 1.08 if light else 0.86)))
+        c.setStrokeColorRGB(*(darken(base, 1.08 if light else 0.86)))
         c.bezier(px, py, px + length * 0.3, py + rnd.uniform(-0.1, 0.1) * cm,
                  px + length * 0.7, py + rnd.uniform(-0.1, 0.1) * cm,
                  px + length, py + rnd.uniform(-0.05, 0.05) * cm)
 
     # Grain
     for _ in range(int(area * 14)):
-        c.setFillColorRGB(*darken(pal["base"], rnd.choice((0.72, 0.82, 1.10))))
+        c.setFillColorRGB(*darken(base, rnd.choice((0.72, 0.82, 1.10))))
         c.circle(rnd.uniform(x0, x1), rnd.uniform(y0, y1),
                  rnd.uniform(0.008, 0.02) * cm, stroke=0, fill=1)
 
     # Cracks
-    c.setStrokeColorRGB(*darken(pal["base"], 0.55))
+    c.setStrokeColorRGB(*darken(base, 0.55))
     c.setLineWidth(0.4)
     for _ in range(int(area / 30) + 1):
         px = rnd.uniform(x0, x1)
@@ -458,7 +560,9 @@ def texture_stucco(c, x0, y0, x1, y1, pal, rnd):
         c.drawPath(p, stroke=1, fill=0)
 
     # Where the plaster has come off: the bricks under it
-    for _ in range(int(area / 55) + 1):
+    expected = area / chips
+    spots = int(expected) + (1 if rnd.random() < expected - int(expected) else 0)
+    for _ in range(spots):
         px = rnd.uniform(x0 + 0.5 * cm, x1 - 0.5 * cm)
         py = rnd.uniform(y0 + 0.5 * cm, y1 - 0.5 * cm)
         points = []
@@ -473,8 +577,8 @@ def texture_stucco(c, x0, y0, x1, y1, pal, rnd):
         for point in points[1:]:
             patch.lineTo(*point)
         patch.close()
-        c.setFillColorRGB(*darken(pal["base"], 0.8))          # edge of the plaster
-        c.setStrokeColorRGB(*darken(pal["base"], 0.55))
+        c.setFillColorRGB(*darken(base, 0.8))          # edge of the plaster
+        c.setStrokeColorRGB(*darken(base, 0.55))
         c.setLineWidth(1.4)
         c.drawPath(patch, stroke=1, fill=1)
         c.setFillColorRGB(*vary((0.62, 0.33, 0.26), rnd, 0.12))
@@ -486,6 +590,67 @@ def texture_stucco(c, x0, y0, x1, y1, pal, rnd):
         c.line(px - 0.5 * cm, py, px + 0.5 * cm, py)
         c.line(px - 0.5 * cm, py + 0.2 * cm, px + 0.5 * cm, py + 0.2 * cm)
     c.restoreState()
+
+
+@wall_texture("old_stucco", base=(0.91, 0.85, 0.72))
+def texture_old_stucco(c, x0, y0, x1, y1, pal, rnd):
+    """Old plaster, yellowed: it has come off in many places."""
+    _plaster(c, x0, y0, x1, y1, pal["base"], rnd, chips=14)
+
+
+def _timber(c, x0, y0, x1, y1, rnd):
+    """The wooden frame of a half-timbered wall: a beam at every floor,
+    posts, and braces across some of the panels."""
+    beam = 0.20 * cm
+    dark = (0.29, 0.19, 0.11)
+    edge = (0.17, 0.10, 0.06)
+    width, height = x1 - x0, y1 - y0
+
+    posts = max(1, round(width / (2.4 * cm)))
+    xs = [x0 + width * i / posts for i in range(posts + 1)]
+    ys = [y0 + k * 2.5 * cm for k in range(int(height / (2.5 * cm)) + 2)]
+
+    # Braces first, so that the beams and the posts are over them
+    c.setLineCap(0)
+    for k in range(len(ys) - 1):
+        for i in range(posts):
+            if rnd.random() < 0.45:
+                xa, xb = xs[i] + beam / 2, xs[i + 1] - beam / 2
+                ya, yb = ys[k] + beam / 2, ys[k + 1] - beam / 2
+                if rnd.random() < 0.5:
+                    xa, xb = xb, xa
+                c.setStrokeColorRGB(*edge)
+                c.setLineWidth(beam + 0.8)
+                c.line(xa, ya, xb, yb)
+                c.setStrokeColorRGB(*dark)
+                c.setLineWidth(beam)
+                c.line(xa, ya, xb, yb)
+
+    c.setFillColorRGB(*dark)
+    c.setStrokeColorRGB(*edge)
+    c.setLineWidth(0.5)
+    for y in ys:
+        c.rect(x0 - 0.1 * cm, y - beam / 2, width + 0.2 * cm, beam,
+               stroke=1, fill=1)
+    for x in xs:
+        c.rect(x - beam / 2, y0 - 0.1 * cm, beam, height + 0.2 * cm,
+               stroke=1, fill=1)
+
+    # The grain of the wood
+    c.setStrokeColorRGB(*[min(1.0, v * 1.45) for v in dark])
+    c.setLineWidth(0.35)
+    for y in ys:
+        c.line(x0, y + beam * 0.15, x1, y + beam * 0.15)
+    for x in xs:
+        c.line(x + beam * 0.15, y0, x + beam * 0.15, y1)
+
+
+@wall_texture("new_stucco", base=(0.95, 0.93, 0.87))
+def texture_new_stucco(c, x0, y0, x1, y1, pal, rnd):
+    """White plaster in a wooden frame, like the houses of the Middle Ages:
+    the bricks show only in a few places."""
+    _plaster(c, x0, y0, x1, y1, pal["base"], rnd, chips=140)
+    _timber(c, x0, y0, x1, y1, rnd)
 
 
 # ============================================================
@@ -675,3 +840,70 @@ def texture_roof_grass(c, w, d, pal, rnd):
         c.setFillColorRGB(*rnd.choice(colours))
         c.circle(rnd.uniform(0, w), rnd.uniform(0, d),
                  rnd.uniform(0.018, 0.035) * cm, stroke=0, fill=1)
+
+
+@roof_texture("earth", base=(0.50, 0.36, 0.24))
+def texture_roof_earth(c, w, d, pal, rnd):
+    """A roof of packed earth: clods, pebbles, ripples and a few tufts of
+    dry grass."""
+    area = (w * d) / cm ** 2
+
+    c.setFillColorRGB(*pal["base"])
+    c.rect(0, 0, w, d, stroke=0, fill=1)
+
+    # Patches of a darker or a lighter earth
+    for _ in range(int(area * 0.6) + 2):
+        r = rnd.uniform(0.4, 1.1) * cm
+        px = rnd.uniform(0, w)
+        py = rnd.uniform(0, d)
+        shade = darken(pal["base"], rnd.choice((0.8, 0.9, 1.1, 1.2)))
+        c.setFillColorRGB(*blend(pal["base"], shade, 0.6))
+        c.ellipse(px - r, py - r * 0.7, px + r, py + r * 0.7, stroke=0, fill=1)
+
+    # Ripples across the slope
+    c.setLineWidth(0.6)
+    c.setStrokeColorRGB(*darken(pal["base"], 0.7))
+    y = 0.4 * cm
+    while y < d:
+        x = -0.3 * cm
+        line = c.beginPath()
+        line.moveTo(x, y)
+        while x < w:
+            nx = x + rnd.uniform(0.5, 1.1) * cm
+            line.curveTo(x + 0.2 * cm, y + rnd.uniform(-0.1, 0.1) * cm,
+                         nx - 0.2 * cm, y + rnd.uniform(-0.1, 0.1) * cm,
+                         nx, y + rnd.uniform(-0.05, 0.05) * cm)
+            x = nx
+        c.drawPath(line, stroke=1, fill=0)
+        y += rnd.uniform(0.7, 1.1) * cm
+
+    # Clods: a shadow, and a lighter top
+    for _ in range(int(area * 3)):
+        px = rnd.uniform(0, w)
+        py = rnd.uniform(0, d)
+        r = rnd.uniform(0.04, 0.12) * cm
+        c.setFillColorRGB(*darken(pal["base"], 0.62))
+        c.ellipse(px - r, py - r * 0.8 - r * 0.25, px + r, py + r * 0.8 - r * 0.25,
+                  stroke=0, fill=1)
+        c.setFillColorRGB(*darken(pal["base"], rnd.choice((1.05, 1.15, 1.25))))
+        c.ellipse(px - r, py - r * 0.8, px + r, py + r * 0.8, stroke=0, fill=1)
+
+    # Pebbles
+    for _ in range(int(area * 1.5)):
+        px = rnd.uniform(0, w)
+        py = rnd.uniform(0, d)
+        r = rnd.uniform(0.02, 0.06) * cm
+        stone = vary((0.55, 0.52, 0.48), rnd, 0.2)
+        c.setFillColorRGB(*stone)
+        c.ellipse(px - r, py - r * 0.75, px + r, py + r * 0.75,
+                  stroke=0, fill=1)
+
+    # Tufts of dry grass
+    for _ in range(int(area * 0.5) + 1):
+        px = rnd.uniform(0, w)
+        py = rnd.uniform(0, d)
+        c.setStrokeColorRGB(*vary((0.55, 0.50, 0.26), rnd, 0.2))
+        c.setLineWidth(0.6)
+        for _ in range(rnd.randint(3, 5)):
+            length = rnd.uniform(0.15, 0.3) * cm
+            c.line(px, py, px + rnd.uniform(-0.12, 0.12) * cm, py + length)

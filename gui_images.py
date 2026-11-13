@@ -196,7 +196,7 @@ def draw_swatch(role, name, base, size=(64, 44)):
                     radius=3 * s, fill=shade(base, 0.15))
                 x += rw
             y += rh
-    elif name == "earth":
+    elif name == "earth" and role == "wall":
         d.rectangle([0, 0, w, h], fill=base)
         y = 0
         while y < h:
@@ -211,7 +211,48 @@ def draw_swatch(role, name, base, size=(64, 44)):
             r = rnd.randint(1, 2) * s
             d.ellipse([px - r, py - r, px + r, py + r],
                       fill=shade((135, 120, 106), 0.2))
-    elif name == "fieldstone":
+    elif name == "fieldstone":                  # a rock face
+        cols, rows = 6, 5
+        cw, ch = w / (cols - 1), h / (rows - 2)
+        corners = {(i, j): (int(i * cw - cw * 0.2 + rnd.uniform(-0.3, 0.3) * cw),
+                            int(j * ch - ch * 0.5 + rnd.uniform(-0.3, 0.3) * ch))
+                   for i in range(cols + 1) for j in range(rows + 1)}
+        for j in range(rows):
+            tone = rnd.uniform(-0.1, 0.1)
+            for i in range(cols):
+                a, b = corners[i, j], corners[i + 1, j]
+                e, f = corners[i, j + 1], corners[i + 1, j + 1]
+                for triangle in ((a, b, f), (a, f, e)):
+                    factor = 1 + tone + rnd.uniform(-0.22, 0.22)
+                    colour = tuple(max(0, min(255, int(v * factor)))
+                                   for v in base)
+                    d.polygon(list(triangle), fill=colour,
+                              outline=darker(colour, 0.7))
+        d.line([0, int(h * 0.42), int(w * 0.4), int(h * 0.38),
+                int(w * 0.7), int(h * 0.45), w, int(h * 0.4)],
+               fill=darker(base, 0.4), width=max(1, s))
+    elif name == "earth":                       # a roof of packed earth
+        for _ in range(16):
+            px, py = rnd.randint(0, w), rnd.randint(0, h)
+            r = rnd.randint(5, 10) * s
+            d.ellipse([px - r, py - r // 2, px + r, py + r // 2],
+                      fill=shade(base, 0.12))
+        y = 6 * s
+        while y < h:
+            d.line([0, y, w // 3, y - s, 2 * w // 3, y + s, w, y],
+                   fill=darker(base, 0.72), width=max(1, s // 2))
+            y += rnd.randint(9, 13) * s
+        for _ in range(60):
+            px, py = rnd.randint(0, w), rnd.randint(0, h)
+            r = rnd.randint(1, 2) * s
+            d.ellipse([px - r, py - r, px + r, py + r],
+                      fill=shade(base, 0.25))
+        for _ in range(12):
+            px, py = rnd.randint(0, w), rnd.randint(0, h)
+            r = s
+            d.ellipse([px - r, py - r, px + r, py + r],
+                      fill=shade((140, 134, 126), 0.15))
+    elif name == "rubble":
         d.rectangle([0, 0, w, h], fill=(77, 71, 66))
         y = -rnd.randint(0, 6) * s
         while y < h:
@@ -231,7 +272,7 @@ def draw_swatch(role, name, base, size=(64, 44)):
                 d.polygon(pts, fill=col, outline=darker(col, 0.5))
                 x += sw
             y += rh
-    elif name == "stucco":
+    elif name in ("old_stucco", "new_stucco"):
         d.rectangle([0, 0, w, h], fill=base)
         for _ in range(14):
             px, py = rnd.randint(0, w), rnd.randint(0, h)
@@ -242,10 +283,27 @@ def draw_swatch(role, name, base, size=(64, 44)):
             px, py = rnd.randint(0, w), rnd.randint(0, h)
             d.point((px, py), fill=darker(base, 0.78))
         bx, by = int(w * 0.68), int(h * 0.62)
-        d.polygon([(bx - 5 * s, by), (bx - 2 * s, by - 4 * s),
-                   (bx + 4 * s, by - 3 * s), (bx + 5 * s, by + 2 * s),
-                   (bx, by + 5 * s)], fill=(158, 84, 66),
-                  outline=darker(base, 0.55))
+        if name == "old_stucco":
+            d.polygon([(bx - 6 * s, by), (bx - 2 * s, by - 5 * s),
+                       (bx + 5 * s, by - 4 * s), (bx + 6 * s, by + 3 * s),
+                       (bx, by + 6 * s)], fill=(158, 84, 66),
+                      outline=darker(base, 0.55))
+            bx, by = int(w * 0.22), int(h * 0.3)
+            d.polygon([(bx - 4 * s, by), (bx, by - 4 * s),
+                       (bx + 4 * s, by - 1 * s), (bx + 2 * s, by + 4 * s),
+                       (bx - 3 * s, by + 3 * s)], fill=(158, 84, 66),
+                      outline=darker(base, 0.55))
+        else:
+            beam = (74, 48, 28)
+            width = max(2, 2 * s)
+            for fx in (0.0, 0.5, 1.0):
+                d.line([int(w * fx), 0, int(w * fx), h], fill=beam,
+                       width=width)
+            for fy in (0.0, 0.58, 1.0):
+                d.line([0, int(h * fy), w, int(h * fy)], fill=beam,
+                       width=width)
+            d.line([int(w * 0.5), int(h * 0.58), w, 0], fill=beam,
+                   width=width)
     elif name == "grass":
         d.rectangle([0, 0, w, h], fill=base)
         for _ in range(180):
@@ -389,3 +447,136 @@ def draw_indicator(kind, state, size, pad):
                       fill=COLORS["disabled"] if disabled else COLORS["accent"])
 
     return img.resize((size + pad, size), Image.LANCZOS)
+
+
+def draw_fitting_swatch(kind, style, size=(64, 44)):
+    """A small picture of a style of window or door, for the choice of look.
+    `kind` is "window" or "door"."""
+    s = SUPER
+    w, h = size[0] * s, size[1] * s
+    img = Image.new("RGB", (w, h), (226, 215, 192))
+    d = ImageDraw.Draw(img)
+    cx = w // 2
+
+    stone = (160, 158, 152)
+    glass = (176, 216, 240)
+    wood = (92, 58, 36)
+    iron = (52, 54, 60)
+
+    def darker(rgb, f):
+        return tuple(max(0, min(255, int(v * f))) for v in rgb)
+
+    def arch_mask(x0, y0, x1, y1):
+        """A rectangle with a half circle on top."""
+        mask = Image.new("L", (w, h), 0)
+        m = ImageDraw.Draw(mask)
+        r = (x1 - x0) // 2
+        m.rectangle([x0, y0 + r, x1, y1], fill=255)
+        m.ellipse([x0, y0, x1, y0 + 2 * r], fill=255)
+        return mask
+
+    def paste_arch(colour, box):
+        img.paste(Image.new("RGB", (w, h), colour), (0, 0), arch_mask(*box))
+
+    if kind == "window" and style == "castle":
+        sw, sh = 10 * s, 34 * s
+        x0, y0 = cx - sw // 2, (h - sh) // 2
+        paste_arch(stone, (x0 - 3 * s, y0 - 2 * s, x0 + sw + 3 * s,
+                           y0 + sh + 2 * s))
+        paste_arch((18, 16, 18), (x0, y0, x0 + sw, y0 + sh))
+        d.rectangle([x0 - 5 * s, y0 + sh + 2 * s, x0 + sw + 5 * s,
+                     y0 + sh + 4 * s], fill=darker(stone, 1.1),
+                    outline=darker(stone, 0.55))
+
+    elif kind == "window" and style == "stained":
+        ww, wh = 20 * s, 32 * s
+        x0, y0 = cx - ww // 2, (h - wh) // 2
+        paste_arch((38, 38, 44), (x0 - 2 * s, y0 - 2 * s, x0 + ww + 2 * s,
+                                  y0 + wh + 2 * s))
+        layer = Image.new("RGB", (w, h), (38, 38, 44))
+        ld = ImageDraw.Draw(layer)
+        colours = [(46, 87, 199), (204, 43, 51), (242, 194, 46),
+                   (46, 153, 87), (148, 71, 168)]
+        cols, rows = 3, 5
+        for i in range(cols):
+            for j in range(rows):
+                ld.rectangle([x0 + i * ww // cols + s // 2,
+                              y0 + j * wh // rows + s // 2,
+                              x0 + (i + 1) * ww // cols - s // 2,
+                              y0 + (j + 1) * wh // rows - s // 2],
+                             fill=colours[(i * 2 + j * 3 + i * j) % 5])
+        img.paste(layer, (0, 0), arch_mask(x0, y0, x0 + ww, y0 + wh))
+
+    elif kind == "window":
+        ww, wh = 22 * s, 28 * s
+        x0, y0 = cx - ww // 2, (h - wh) // 2 - s
+        x1, y1 = x0 + ww, y0 + wh
+        if style == "stone":
+            f = 4 * s
+            edge = darker(stone, 0.55)
+            d.rectangle([x0 - f, y0 - f, x1 + f, y1 + f], fill=stone,
+                        outline=edge)
+            for k in range(1, 4):
+                yy = y0 - f + (wh + 2 * f) * k // 4
+                d.line([x0 - f, yy, x0, yy], fill=edge)
+                d.line([x1, yy, x1 + f, yy], fill=edge)
+            d.rectangle([x0 - f - 2 * s, y1 + f, x1 + f + 2 * s,
+                         y1 + f + 3 * s], fill=darker(stone, 1.08),
+                        outline=edge)
+            bar = darker(stone, 0.85)
+        else:
+            f = 2 * s
+            d.rectangle([x0 - f, y0 - f, x1 + f, y1 + f], fill=wood)
+            d.rectangle([x0 - f - s, y1 + f, x1 + f + s, y1 + f + 2 * s],
+                        fill=wood)
+            bar = wood
+        d.rectangle([x0, y0, x1, y1], fill=glass)
+        d.line([cx, y0, cx, y1], fill=bar, width=max(1, int(1.5 * s)))
+        d.line([x0, (y0 + y1) // 2, x1, (y0 + y1) // 2], fill=bar,
+               width=max(1, int(1.5 * s)))
+
+    else:                                   # a door
+        dw, dh = 22 * s, 36 * s
+        x0, y1 = cx - dw // 2, h - 2 * s
+        y0 = y1 - dh
+        plank = {"iron": (98, 62, 36),
+                 "studded": (78, 50, 28)}.get(style, (112, 72, 42))
+        paste_arch(darker(wood, 0.7), (x0 - 2 * s, y0 - 2 * s, x0 + dw + 2 * s,
+                                       y1))
+        layer = Image.new("RGB", (w, h), plank)
+        ld = ImageDraw.Draw(layer)
+        for k in range(5):
+            ld.line([x0 + k * dw // 5, y0, x0 + k * dw // 5, y1],
+                    fill=darker(plank, 0.7), width=max(1, s))
+        if style == "iron":
+            for t in (0.2, 0.5, 0.8):
+                yy = y1 - int(dh * t)
+                ld.rectangle([x0, yy - 2 * s, x0 + dw, yy + 2 * s], fill=iron)
+        elif style == "studded":
+            for t in (0.28, 0.66):
+                yy = y1 - int(dh * t)
+                ld.polygon([(x0, yy - 2 * s), (x0 + int(dw * 0.65), yy - 2 * s),
+                            (x0 + int(dw * 0.78), yy),
+                            (x0 + int(dw * 0.65), yy + 2 * s),
+                            (x0, yy + 2 * s)], fill=iron)
+            for i in range(3):
+                for j in range(5):
+                    sx = x0 + dw * (2 * i + 1) // 6
+                    sy = y1 - int(dh * (0.1 + 0.6 * j / 4))
+                    ld.ellipse([sx - s, sy - s, sx + s, sy + s],
+                               fill=(150, 152, 160))
+        else:
+            for t in (0.25, 0.62):
+                yy = y1 - int(dh * t)
+                ld.rectangle([x0, yy - s, x0 + 5 * s, yy + s],
+                             fill=darker(wood, 0.55))
+        kx, ky = x0 + int(dw * 0.74), y1 - int(dh * 0.42)
+        if style == "wood":
+            ld.ellipse([kx - 2 * s, ky - 2 * s, kx + 2 * s, ky + 2 * s],
+                       fill=(200, 160, 60))
+        else:
+            ld.ellipse([kx - 3 * s, ky - 3 * s, kx + 3 * s, ky + 3 * s],
+                       outline=iron, width=max(1, s))
+        img.paste(layer, (0, 0), arch_mask(x0, y0, x0 + dw, y1))
+
+    return img.resize(size, Image.LANCZOS)
